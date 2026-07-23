@@ -7,180 +7,270 @@
       "exclusion_reason": "within_4s_of_pushoff",
       "index": 0,
       "side": "R",
-      "t_end": 3.3333,
-      "t_start": 2.675,
-      "true_d_pitch_deg": 21.1985,
-      "true_peak_roll_deg": 36.8177
+      "t_end": 3.3167,
+      "t_start": 2.6833,
+      "true_d_pitch_deg": 21.9679,
+      "true_peak_roll_deg": 35.7369
     },
     {
       "excluded_by_protocol": false,
       "exclusion_reason": null,
       "index": 1,
       "side": "L",
-      "t_end": 7.4333,
-      "t_start": 6.8917,
-      "true_d_pitch_deg": 24.552,
-      "true_peak_roll_deg": 32.3666
+      "t_end": 7.425,
+      "t_start": 6.9083,
+      "true_d_pitch_deg": 25.0016,
+      "true_peak_roll_deg": 31.3025
     },
     {
       "excluded_by_protocol": false,
       "exclusion_reason": null,
       "index": 2,
       "side": "R",
-      "t_end": 11.8,
+      "t_end": 11.7917,
       "t_start": 11.0667,
-      "true_d_pitch_deg": 21.093,
-      "true_peak_roll_deg": 41.1331
+      "true_d_pitch_deg": 21.9248,
+      "true_peak_roll_deg": 39.96
     },
     {
       "excluded_by_protocol": false,
       "exclusion_reason": null,
       "index": 3,
       "side": "L",
-      "t_end": 15.9417,
-      "t_start": 15.2833,
-      "true_d_pitch_deg": 17.4266,
-      "true_peak_roll_deg": 36.7048
+      "t_end": 15.9333,
+      "t_start": 15.2917,
+      "true_d_pitch_deg": 18.0492,
+      "true_peak_roll_deg": 35.8559
     },
     {
       "excluded_by_protocol": false,
       "exclusion_reason": null,
       "index": 4,
       "side": "R",
-      "t_end": 19.8833,
-      "t_start": 19.425,
-      "true_d_pitch_deg": 17.6063,
-      "true_peak_roll_deg": 29.9096
+      "t_end": 19.8667,
+      "t_start": 19.4417,
+      "true_d_pitch_deg": 17.9141,
+      "true_peak_roll_deg": 29.1619
     },
     {
       "excluded_by_protocol": false,
       "exclusion_reason": null,
       "index": 5,
       "side": "L",
-      "t_end": 26.4917,
-      "t_start": 25.8833,
-      "true_d_pitch_deg": 23.0074,
-      "true_peak_roll_deg": 34.7869
+      "t_end": 24.1167,
+      "t_start": 23.525,
+      "true_d_pitch_deg": 21.4667,
+      "true_peak_roll_deg": 33.8201
     },
     {
       "excluded_by_protocol": false,
       "exclusion_reason": null,
       "index": 6,
       "side": "R",
-      "t_end": 30.75,
-      "t_start": 30.1583,
-      "true_d_pitch_deg": 17.1017,
-      "true_peak_roll_deg": 34.2996
+      "t_end": 28.2583,
+      "t_start": 27.675,
+      "true_d_pitch_deg": 19.2768,
+      "true_peak_roll_deg": 33.4043
     },
     {
       "excluded_by_protocol": false,
       "exclusion_reason": null,
       "index": 7,
       "side": "L",
-      "t_end": 34.8917,
-      "t_start": 34.3833,
-      "true_d_pitch_deg": 20.7485,
-      "true_peak_roll_deg": 31.3469
+      "t_end": 35.6667,
+      "t_start": 35.175,
+      "true_d_pitch_deg": 16.4213,
+      "true_peak_roll_deg": 30.6313
     },
     {
       "excluded_by_protocol": false,
       "exclusion_reason": null,
       "index": 8,
       "side": "R",
-      "t_end": 39.0917,
-      "t_start": 38.4083,
-      "true_d_pitch_deg": 17.6362,
-      "true_peak_roll_deg": 38.4222
+      "t_end": 39.875,
+      "t_start": 39.2,
+      "true_d_pitch_deg": 22.2792,
+      "true_peak_roll_deg": 37.2891
     },
     {
-      "excluded_by_protocol": true,
-      "exclusion_reason": "within_4s_of_pushoff",
+      "excluded_by_protocol": false,
+      "exclusion_reason": null,
       "index": 9,
       "side": "L",
-      "t_end": 46.6833,
-      "t_start": 46.0667,
-      "true_d_pitch_deg": 18.8181,
-      "true_peak_roll_deg": 35.0036
+      "t_end": 44.0333,
+      "t_start": 43.4333,
+      "true_d_pitch_deg": 18.48,
+      "true_peak_roll_deg": 34.164
     },
     {
       "excluded_by_protocol": false,
       "exclusion_reason": null,
       "index": 10,
       "side": "R",
-      "t_end": 50.9083,
-      "t_start": 50.2333,
-      "true_d_pitch_deg": 18.6191,
-      "true_peak_roll_deg": 37.5508
+      "t_end": 48.325,
+      "t_start": 47.6667,
+      "true_d_pitch_deg": 20.2274,
+      "true_peak_roll_deg": 36.5415
     },
     {
       "excluded_by_protocol": false,
       "exclusion_reason": null,
       "index": 11,
       "side": "L",
-      "t_end": 55.0417,
-      "t_start": 54.3833,
-      "true_d_pitch_deg": 22.4174,
-      "true_peak_roll_deg": 36.6198
+      "t_end": 52.5167,
+      "t_start": 51.8833,
+      "true_d_pitch_deg": 21.252,
+      "true_peak_roll_deg": 35.6017
     },
     {
       "excluded_by_protocol": false,
       "exclusion_reason": null,
       "index": 12,
       "side": "R",
-      "t_end": 59.35,
-      "t_start": 58.675,
-      "true_d_pitch_deg": 23.5209,
-      "true_peak_roll_deg": 37.5764
+      "t_end": 56.6583,
+      "t_start": 56.0,
+      "true_d_pitch_deg": 24.7151,
+      "true_peak_roll_deg": 36.3361
     },
     {
-      "excluded_by_protocol": false,
-      "exclusion_reason": null,
+      "excluded_by_protocol": true,
+      "exclusion_reason": "within_4s_of_pushoff",
       "index": 13,
       "side": "L",
-      "t_end": 63.6583,
-      "t_start": 62.9417,
-      "true_d_pitch_deg": 18.7712,
-      "true_peak_roll_deg": 39.8388
+      "t_end": 63.6083,
+      "t_start": 62.9,
+      "true_d_pitch_deg": 19.8799,
+      "true_peak_roll_deg": 38.8467
     },
     {
       "excluded_by_protocol": false,
       "exclusion_reason": null,
       "index": 14,
       "side": "R",
-      "t_end": 71.1167,
-      "t_start": 70.4833,
-      "true_d_pitch_deg": 26.3633,
-      "true_peak_roll_deg": 35.6548
+      "t_end": 67.775,
+      "t_start": 67.1667,
+      "true_d_pitch_deg": 25.1611,
+      "true_peak_roll_deg": 34.4415
     },
     {
       "excluded_by_protocol": false,
       "exclusion_reason": null,
       "index": 15,
       "side": "L",
-      "t_end": 75.325,
-      "t_start": 74.6917,
-      "true_d_pitch_deg": 18.1127,
-      "true_peak_roll_deg": 35.6847
+      "t_end": 71.9667,
+      "t_start": 71.35,
+      "true_d_pitch_deg": 20.9079,
+      "true_peak_roll_deg": 34.7257
     },
     {
       "excluded_by_protocol": false,
       "exclusion_reason": null,
       "index": 16,
       "side": "R",
-      "t_end": 79.5917,
-      "t_start": 79.0083,
-      "true_d_pitch_deg": 23.1882,
-      "true_peak_roll_deg": 33.7364
+      "t_end": 76.1333,
+      "t_start": 75.575,
+      "true_d_pitch_deg": 21.8718,
+      "true_peak_roll_deg": 32.7339
     },
     {
       "excluded_by_protocol": false,
       "exclusion_reason": null,
       "index": 17,
       "side": "L",
-      "t_end": 83.8417,
-      "t_start": 83.125,
-      "true_d_pitch_deg": 20.8825,
-      "true_peak_roll_deg": 39.8166
+      "t_end": 80.55,
+      "t_start": 79.85,
+      "true_d_pitch_deg": 22.7499,
+      "true_peak_roll_deg": 38.6583
+    },
+    {
+      "excluded_by_protocol": false,
+      "exclusion_reason": null,
+      "index": 18,
+      "side": "R",
+      "t_end": 84.65,
+      "t_start": 84.075,
+      "true_d_pitch_deg": 28.3056,
+      "true_peak_roll_deg": 33.1058
+    },
+    {
+      "excluded_by_protocol": false,
+      "exclusion_reason": null,
+      "index": 19,
+      "side": "L",
+      "t_end": 88.8167,
+      "t_start": 88.3917,
+      "true_d_pitch_deg": 21.4971,
+      "true_peak_roll_deg": 29.0428
+    },
+    {
+      "excluded_by_protocol": true,
+      "exclusion_reason": "within_4s_of_pushoff",
+      "index": 20,
+      "side": "R",
+      "t_end": 96.25,
+      "t_start": 95.7417,
+      "true_d_pitch_deg": 30.154,
+      "true_peak_roll_deg": 31.2573
+    },
+    {
+      "excluded_by_protocol": false,
+      "exclusion_reason": null,
+      "index": 21,
+      "side": "L",
+      "t_end": 100.5417,
+      "t_start": 99.8417,
+      "true_d_pitch_deg": 15.8507,
+      "true_peak_roll_deg": 38.6441
+    },
+    {
+      "excluded_by_protocol": false,
+      "exclusion_reason": null,
+      "index": 22,
+      "side": "R",
+      "t_end": 104.4667,
+      "t_start": 103.8917,
+      "true_d_pitch_deg": 27.8,
+      "true_peak_roll_deg": 33.2821
+    },
+    {
+      "excluded_by_protocol": false,
+      "exclusion_reason": null,
+      "index": 23,
+      "side": "L",
+      "t_end": 108.5333,
+      "t_start": 108.1333,
+      "true_d_pitch_deg": 16.0632,
+      "true_peak_roll_deg": 28.6973
+    },
+    {
+      "excluded_by_protocol": false,
+      "exclusion_reason": null,
+      "index": 24,
+      "side": "R",
+      "t_end": 112.9083,
+      "t_start": 112.375,
+      "true_d_pitch_deg": 23.4015,
+      "true_peak_roll_deg": 31.9981
+    },
+    {
+      "excluded_by_protocol": false,
+      "exclusion_reason": null,
+      "index": 25,
+      "side": "L",
+      "t_end": 117.1583,
+      "t_start": 116.575,
+      "true_d_pitch_deg": 17.9984,
+      "true_peak_roll_deg": 33.5648
+    },
+    {
+      "excluded_by_protocol": true,
+      "exclusion_reason": "within_2s_of_end",
+      "index": 26,
+      "side": "R",
+      "t_end": 121.3917,
+      "t_start": 120.7083,
+      "true_d_pitch_deg": 26.9512,
+      "true_peak_roll_deg": 37.6395
     }
   ],
   "mount_offset_deg": [
@@ -190,27 +280,27 @@
   ],
   "mount_slip_deg_per_min": 0.0,
   "n_lengths": 4,
-  "pitch_baseline_deg": 2.2855,
+  "pitch_baseline_deg": 4.0,
   "pushoffs": [
     {
       "t": 0.0
     },
     {
-      "t": 21.5549
+      "t": 29.975
     },
     {
-      "t": 43.5226
+      "t": 61.2621
     },
     {
-      "t": 65.1849
+      "t": 92.026
     }
   ],
   "sample_rate_hz": 120.0,
   "seed": 102,
   "stroke_period_s": 1.4,
   "summary": {
-    "n_breaths": 18,
-    "n_valid_breaths": 16,
-    "true_mean_d_pitch_deg": 20.6904
+    "n_breaths": 27,
+    "n_valid_breaths": 23,
+    "true_mean_d_pitch_deg": 21.2441
   }
 }
