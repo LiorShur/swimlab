@@ -1,0 +1,12 @@
+{
+  "bad_calibration": true,
+  "expected_pose_angle_deg": 65.0,
+  "mount_offset_deg": [
+    3.0,
+    -2.0,
+    12.0
+  ],
+  "pitch_baseline_deg": 4.0,
+  "sample_rate_hz": 120.0,
+  "seed": 2
+}

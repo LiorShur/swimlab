@@ -1,4 +1,5 @@
 data/
 notebooks/
 tests/fixtures/*.csv
+tests/fixtures/*.parquet
 *.mp4
