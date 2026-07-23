@@ -1,0 +1,7 @@
+data/
+notebooks/*.ipynb
+*.mp4
+*.csv
+.venv/
+__pycache__/
+_keys/

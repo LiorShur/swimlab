@@ -1,0 +1,14 @@
+# swimlab study configuration
+#
+# Every threshold in the pipeline lives here, never in code (see CLAUDE.md,
+# hard constraint 4). These are study parameters, not code constants — they
+# are expected to be retuned on the first real participant.
+
+sample_rate_hz: 120
+breath_roll_threshold_deg: 25.0
+pushoff_g_threshold: 2.0
+exclude_after_pushoff_s: 4.0
+exclude_before_end_s: 2.0
+min_valid_cycles: 20
+calib_pose_angle_deg: 90.0
+calib_pose_tolerance_deg: 10.0

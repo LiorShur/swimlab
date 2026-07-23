@@ -1,0 +1,4 @@
+data/
+notebooks/
+tests/fixtures/*.csv
+*.mp4
