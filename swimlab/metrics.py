@@ -48,19 +48,32 @@ over the *preceding non-breath cycles*. The preceding window is taken as::
 
     [ max(previous_breath_end, t_start - L),  t_start )
 
-where ``L`` is the median inter-breath interval measured on this trial (one
-breathing cycle). Clipping the lower edge to the previous breath's end keeps
-the baseline strictly inside non-breath pitch; capping it at ``t_start - L``
-keeps it to roughly one cycle immediately before the breath. This recovers the
-synthetic ground-truth ``true_d_pitch_deg`` on the trial mean to well within
-0.5 deg for archetypes whose breath apex does not sit on a stroke-bob crest
-(MIXED, ASYMMETRIC) and to ~1 deg for high-lift archetypes (LIFTER, ROTATOR).
-The residual on the latter is a genuine, documented property of the metric,
-not a bug: the literal "peak pitch" captures the forward stroke-cycle bob that
-coincides with the breath apex, whereas the injected ground-truth lift does
-not -- see ``tests/test_metrics.py`` and the module summary returned by the
-tests. It is always a small *positive* over-read and stays within the study's
-full-noise tolerance.
+where ``L`` is **one stroke-cycle** -- a cycle is two strokes, i.e. exactly one
+period of the body-roll (and head-pitch) oscillation. ``L`` is estimated
+*from the data* as the dominant period of the roll signal (the first peak of
+the roll autocorrelation; see :func:`_estimate_cycle_s`), not hardcoded and not
+read from any generator parameter. Using one whole oscillation period means the
+baseline median is taken over an integer number of stroke-cycle pitch
+oscillations, so it is not biased by a phase-dependent partial slice (a
+non-integer window such as the 3-stroke inter-breath interval is 1.5 cycles and
+*is* so biased). Clipping the lower edge to the previous breath's end keeps the
+baseline strictly inside non-breath pitch; the ``t_start - L`` cap keeps it to
+the one cycle immediately before the breath (reaching further, e.g. two cycles,
+lets the window overlap the previous breath's pitch bump).
+
+Recovery of the synthetic ``true_d_pitch_deg`` (zero noise): the trial mean is
+within ~0.5 deg for breaths whose roll excursion is modest, but a systematic,
+*roll-dependent* positive residual remains for large-roll breaths. That
+residual is **not** a baseline-window artifact -- it does not depend on the
+baseline window length or phase, and it scales with the breath's peak roll
+(~+0.04 deg of d_pitch over-read per degree of peak roll). It comes from the
+gravity-tilt pitch/roll decode in :func:`swimlab.calibrate.apply`: at the
+breath apex head pitch and head roll are simultaneously large, and the tilt
+equations then cross-talk a little roll into the reported pitch. Because the
+synthetic ground truth is an intrinsic-Euler pitch, tilt-decoded pitch reads a
+bit high exactly where roll is largest. This is a property of the measurement
+model (calibrate + the metric definition), documented and quantified in
+``tests/test_metrics.py``, not something the baseline window can remove.
 
 ``pitch_drift_100m`` is defined for the T9 drift protocol, not T7; it is
 implemented here as a per-length-median-pitch slope that runs on any
@@ -98,16 +111,44 @@ def _require_columns(df: pl.DataFrame, cols: tuple[str, ...], where: str) -> Non
         raise ValueError(f"{where}: dataframe is missing column(s) {missing}")
 
 
-def _baseline_window_length_s(t_starts: np.ndarray) -> float:
-    """One breathing cycle (s), as the median inter-breath interval.
+def _estimate_cycle_s(t: np.ndarray, roll: np.ndarray) -> float:
+    """Estimate one stroke-cycle (s) as the dominant period of the roll signal.
 
-    Data-derived (no hardcoded threshold). Falls back to NaN when there are
-    fewer than two breaths; callers treat a non-finite length as "look back to
-    the trial start".
+    A front-crawl stroke-cycle is two strokes and the body rolls through exactly
+    one full ``+/-`` oscillation per cycle, so the fundamental period of
+    ``roll_deg`` *is* the cycle length. It is recovered as the first peak of the
+    (biased) autocorrelation of the mean-removed roll, searched in a plausible
+    physiological band (0.8-5 s). This is fully data-driven -- no hardcoded
+    cycle length and nothing read from the synthetic generator.
+
+    The search band edges are not study thresholds: they only bracket "a
+    human swim stroke-cycle" so the autocorrelation peak-finder ignores the
+    zero-lag spike and any implausibly long lag. Returns ``nan`` when the
+    signal is too short to have a period in band; callers then fall back to a
+    look-back-to-trial-start baseline.
     """
-    if t_starts.size < 2:
+    if t.size < 4:
         return float("nan")
-    return float(np.median(np.diff(t_starts)))
+    dt = float(np.median(np.diff(t)))
+    if not np.isfinite(dt) or dt <= 0:
+        return float("nan")
+    fs = 1.0 / dt
+    x = roll - float(np.mean(roll))
+    n = x.size
+    ac = np.correlate(x, x, mode="full")[n - 1 :]
+    if ac[0] == 0:
+        return float("nan")
+    ac = ac / ac[0]
+    lo = int(0.8 * fs)
+    hi = min(int(5.0 * fs), n - 1)
+    if hi <= lo + 1:
+        return float("nan")
+    d = np.diff(ac)
+    for k in range(lo, hi):
+        if d[k - 1] > 0.0 and d[k] <= 0.0:  # first local maximum after lo
+            return k / fs
+    # no clear peak: fall back to the largest autocorrelation lag in band
+    return (lo + int(np.argmax(ac[lo:hi]))) / fs
 
 
 def per_breath_metrics(
@@ -133,8 +174,9 @@ def per_breath_metrics(
         *i-1*, so the table must be time-sorted (``events`` returns it sorted).
     baseline_window_s:
         Override the length ``L`` (s) of the preceding-non-breath baseline
-        window. When ``None`` (default) it is derived from the data as the
-        median inter-breath interval (one breathing cycle).
+        window. When ``None`` (default) it is derived from the data as one
+        stroke-cycle -- the dominant period of the roll signal
+        (:func:`_estimate_cycle_s`).
 
     Returns
     -------
@@ -180,7 +222,7 @@ def per_breath_metrics(
 
     L = baseline_window_s
     if L is None:
-        L = _baseline_window_length_s(t_start)
+        L = _estimate_cycle_s(t, roll)
 
     n = breaths.height
     breath_duration = np.empty(n, dtype=np.float64)
