@@ -97,31 +97,39 @@ def test_poses_map_to_reference_frame():
 def test_recovery_zero_noise_within_1deg(mount):
     """Zero-noise calibration: recovered pitch/roll match truth within ~1 deg.
 
-    ``peak_roll`` is baseline-free and is the clean transform validator (held
-    to 1 deg). ``d_pitch`` additionally carries the slack of reconstructing
-    the "preceding non-breath" baseline here (metrics.py's job, task 3), so it
-    is held to 1.5 deg -- the transform itself is proven by roll and by the
-    pose mapping test above.
+    The trial and calibration share one prone baseline (one swimmer). ``peak_roll``
+    is the baseline-free transform validator and round-trips to well under a
+    degree -- the canonical frame anchors the zero reference to T0b exactly, so
+    there is no roll-dependent pitch cross-talk. ``d_pitch`` carries this test's
+    crude full-gap-baseline slack (metrics.py's one-cycle baseline hits 0.5 deg).
     """
+    baseline = 4.0
     segs, _gt = synth.generate_calibration(
-        mount_offset_deg=mount, pitch_baseline_deg=4.0, noise=False, seed=11
+        mount_offset_deg=mount, pitch_baseline_deg=baseline, noise=False, seed=11
     )
     R = calibrate.fit_transform(segs["t0a"], segs["t0b"])
-    trial, tgt = synth.generate_trial("LIFTER", mount_offset_deg=mount, noise=False, seed=102)
+    trial, tgt = synth.generate_trial(
+        "LIFTER", mount_offset_deg=mount, noise=False, seed=102,
+        pitch_baseline_deg=baseline,
+    )
     dpitch_err, roll_err = _per_breath_errors(trial, tgt, R)
-    assert np.abs(roll_err).mean() < 1.0
-    assert np.abs(roll_err).max() < 1.5
+    assert np.abs(roll_err).mean() < 0.5
+    assert np.abs(roll_err).max() < 0.8
     assert np.abs(dpitch_err).mean() < 1.5
 
 
 @pytest.mark.parametrize("mount", MOUNTS)
 def test_recovery_full_noise_within_2deg(mount):
     """Full-noise calibration + trial: recovery within 2 deg."""
+    baseline = 4.0
     segs, _gt = synth.generate_calibration(
-        mount_offset_deg=mount, pitch_baseline_deg=4.0, noise=True, seed=21
+        mount_offset_deg=mount, pitch_baseline_deg=baseline, noise=True, seed=21
     )
     R = calibrate.fit_transform(segs["t0a"], segs["t0b"])
-    trial, tgt = synth.generate_trial("LIFTER", mount_offset_deg=mount, noise=True, seed=202)
+    trial, tgt = synth.generate_trial(
+        "LIFTER", mount_offset_deg=mount, noise=True, seed=202,
+        pitch_baseline_deg=baseline,
+    )
     dpitch_err, roll_err = _per_breath_errors(trial, tgt, R)
     assert np.abs(roll_err).mean() < 2.0
     assert np.abs(dpitch_err).mean() < 2.0
@@ -129,16 +137,25 @@ def test_recovery_full_noise_within_2deg(mount):
 
 @pytest.mark.parametrize("archetype", ["LIFTER", "ROTATOR", "MIXED", "FLAT"])
 def test_apply_end_to_end_zero_noise(archetype):
-    """apply() recovers per-breath peak-roll (transform validator) and d_pitch
-    across every breathing archetype under a common mount."""
+    """apply() recovers per-breath peak-roll and d_pitch across every breathing
+    archetype under a common mount. The trial and calibration share one prone
+    baseline (one swimmer). ``peak_roll`` is the exact transform validator and
+    round-trips to a small fraction of a degree -- the canonical frame anchors
+    the zero reference to T0b exactly, with no roll-dependent pitch cross-talk.
+    ``d_pitch`` here carries the slack of this test's crude full-gap baseline
+    (metrics.py does the one-cycle baseline properly and hits 0.5 deg)."""
     mount = (6.0, -3.0, 15.0)
+    baseline = 3.0
     segs, _gt = synth.generate_calibration(
-        mount_offset_deg=mount, pitch_baseline_deg=3.0, noise=False, seed=31
+        mount_offset_deg=mount, pitch_baseline_deg=baseline, noise=False, seed=31
     )
     R = calibrate.fit_transform(segs["t0a"], segs["t0b"])
-    trial, tgt = synth.generate_trial(archetype, mount_offset_deg=mount, noise=False, seed=303)
+    trial, tgt = synth.generate_trial(
+        archetype, mount_offset_deg=mount, noise=False, seed=303,
+        pitch_baseline_deg=baseline,
+    )
     dpitch_err, roll_err = _per_breath_errors(trial, tgt, R)
-    assert np.abs(roll_err).mean() < 1.0
+    assert np.abs(roll_err).mean() < 0.5
     assert np.abs(dpitch_err).mean() < 1.5
 
 

@@ -18,18 +18,28 @@ Method
 ------
 The transform is recovered from **gravity only**. For each static pose we
 take the yaw-independent "up" direction in the sensor frame (from the fused
-quaternion, which is robust to linear acceleration), average it over the
-pose, and solve Wahba's two-vector problem for the rotation ``R``
-(sensor -> skull) that maps:
+quaternion, which is robust to linear acceleration) and average it over the
+pose. The calibrated frame is then built directly from those two vectors:
 
-    T0b up  ->  [0, 0, 1]   (prone zero reference, z-up)
-    T0a up  ->  [-1, 0, 0]  (upright, +90 deg pitch, nose-up direction)
+    z-axis = T0b (prone) up          -- the exact zero pitch/roll reference
+    x-axis = sagittal component of T0a up, negated (nose-up -> +90 deg pitch)
+    y-axis = z x x                   -- right-handed
 
-Two non-parallel gravity vectors ~90 deg apart fully constrain a 3-DOF
-rotation, so ``R`` is identifiable up to the residual pose noise. The one
-quantity gravity genuinely *cannot* observe is rotation about the gravity
-axis at a single pose -- but that null direction differs between the two
-poses, so combining them removes the ambiguity for the study-relevant
+The prone pose defines ``+z`` *exactly*; it is the zero reference and must
+not be compromised. The upright pose is a pure pitch from prone, so its up
+vector lies in the sagittal (x-z) plane and its component orthogonal to z
+fixes the azimuth (the x axis). A least-squares two-vector fit (Wahba) is
+deliberately avoided here: T0a and T0b are ~86 deg apart (T0b sits at the
+swimmer's habitual head pitch, not a right angle from upright), so an
+equal-weight fit would split that ~4 deg mismatch and rotate the zero
+reference off T0b -- which, decoded through the tilt equations, injects a
+small roll-dependent error into pitch at large roll. Anchoring z to T0b
+removes that cross-talk, so a perfect (noise-free) trial round-trips to the
+gravity-referenced ground truth exactly.
+
+The one quantity gravity genuinely *cannot* observe is rotation about the
+gravity axis at a single pose -- but that null direction differs between the
+two poses, so combining them removes the ambiguity for the study-relevant
 pitch/roll. (The raw intrinsic-xyz mount Euler triple is not compared
 directly; pitch/roll on a trial are, which is what the study measures.)
 
@@ -52,6 +62,7 @@ from scipy.spatial.transform import Rotation
 
 __all__ = [
     "CALIB_POSE_SUSPECT",
+    "canonical_frame",
     "fit_transform",
     "apply",
     "pose_check",
@@ -64,10 +75,6 @@ CALIB_POSE_SUSPECT = "CALIB_POSE_SUSPECT"
 # gravity-down / z-up global frame, so the up direction in the sensor frame is
 # ``R_quat.inv() @ [0, 0, 1]``.
 _UP_GLOBAL = np.array([0.0, 0.0, 1.0])
-
-# Skull-frame targets for the two calibration poses.
-_T0B_TARGET = np.array([0.0, 0.0, 1.0])   # prone: up is +z (zero reference)
-_T0A_TARGET = np.array([-1.0, 0.0, 0.0])  # upright: +90 deg pitch (nose up)
 
 _CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.yaml"
 
@@ -91,12 +98,35 @@ def _mean_up_sensor(df: pl.DataFrame) -> np.ndarray:
     return mean / np.linalg.norm(mean)
 
 
+def canonical_frame(up_upright: np.ndarray, up_prone: np.ndarray) -> Rotation:
+    """Build the calibrated-skull frame from two static-pose up vectors.
+
+    ``up_prone`` (T0b) defines the calibrated ``+z`` axis exactly -- the zero
+    pitch/roll reference. ``up_upright`` (T0a), a pure pitch from prone, lies in
+    the sagittal plane; its component orthogonal to z fixes the ``x`` axis, with
+    nose-up mapping toward ``-x`` (i.e. positive pitch). ``y = z x x`` completes
+    a right-handed frame. Returned rotation maps a sensor-frame up vector into
+    the calibrated skull frame.
+
+    This is the single source of truth for the gravity-referenced frame; the
+    synthetic generator computes its ground truth with the identical definition
+    (guarded by a round-trip consistency test) so a clean trial recovers the
+    ground-truth pitch/roll exactly.
+    """
+    z = up_prone / np.linalg.norm(up_prone)
+    x_dir = up_upright - np.dot(up_upright, z) * z
+    x = -x_dir / np.linalg.norm(x_dir)
+    y = np.cross(z, x)
+    return Rotation.from_matrix(np.vstack([x, y, z]))
+
+
 def fit_transform(t0a_df: pl.DataFrame, t0b_df: pl.DataFrame) -> Rotation:
     """Recover the sensor-to-calibrated-skull rotation from the two poses.
 
-    Uses gravity only. Solves the two-vector Wahba problem aligning the mean
-    sensor-frame up vectors of T0a (upright) and T0b (face-down prone) to
-    their skull-frame targets ``[-1, 0, 0]`` and ``[0, 0, 1]`` respectively.
+    Uses gravity only, via :func:`canonical_frame` on the mean sensor-frame up
+    vectors of T0a (upright) and T0b (face-down prone). The prone pose anchors
+    the zero reference exactly; see the module docstring for why this is
+    preferred to an equal-weight two-vector Wahba fit.
 
     Parameters
     ----------
@@ -110,10 +140,7 @@ def fit_transform(t0a_df: pl.DataFrame, t0b_df: pl.DataFrame) -> Rotation:
         ``R`` such that ``R.apply(up_sensor)`` gives the up vector in the
         calibrated skull frame.
     """
-    src = np.vstack([_mean_up_sensor(t0a_df), _mean_up_sensor(t0b_df)])
-    tgt = np.vstack([_T0A_TARGET, _T0B_TARGET])
-    rotation, _rmsd = Rotation.align_vectors(tgt, src)
-    return rotation
+    return canonical_frame(_mean_up_sensor(t0a_df), _mean_up_sensor(t0b_df))
 
 
 def apply(df: pl.DataFrame, R: Rotation) -> pl.DataFrame:

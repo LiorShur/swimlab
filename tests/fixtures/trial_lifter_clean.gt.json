@@ -7,10 +7,10 @@
       "exclusion_reason": "within_4s_of_pushoff",
       "index": 0,
       "side": "R",
-      "t_end": 2.8833,
+      "t_end": 2.875,
       "t_start": 2.0333,
-      "true_d_pitch_deg": 12.6811,
-      "true_peak_roll_deg": 48.73
+      "true_d_pitch_deg": 14.0057,
+      "true_peak_roll_deg": 47.8329
     },
     {
       "excluded_by_protocol": false,
@@ -18,9 +18,9 @@
       "index": 1,
       "side": "L",
       "t_end": 7.25,
-      "t_start": 6.4167,
-      "true_d_pitch_deg": 15.5171,
-      "true_peak_roll_deg": 47.6988
+      "t_start": 6.425,
+      "true_d_pitch_deg": 16.6379,
+      "true_peak_roll_deg": 46.7428
     },
     {
       "excluded_by_protocol": false,
@@ -28,29 +28,29 @@
       "index": 2,
       "side": "R",
       "t_end": 11.3083,
-      "t_start": 10.4583,
-      "true_d_pitch_deg": 13.8853,
-      "true_peak_roll_deg": 49.0972
+      "t_start": 10.4667,
+      "true_d_pitch_deg": 15.0652,
+      "true_peak_roll_deg": 48.1775
     },
     {
       "excluded_by_protocol": false,
       "exclusion_reason": null,
       "index": 3,
       "side": "L",
-      "t_end": 15.3333,
-      "t_start": 14.6,
-      "true_d_pitch_deg": 17.0603,
-      "true_peak_roll_deg": 40.4887
+      "t_end": 15.325,
+      "t_start": 14.6083,
+      "true_d_pitch_deg": 17.9024,
+      "true_peak_roll_deg": 39.5779
     },
     {
       "excluded_by_protocol": false,
       "exclusion_reason": null,
       "index": 4,
       "side": "R",
-      "t_end": 19.4583,
+      "t_end": 19.45,
       "t_start": 18.6583,
-      "true_d_pitch_deg": 13.265,
-      "true_peak_roll_deg": 45.2591
+      "true_d_pitch_deg": 14.3927,
+      "true_peak_roll_deg": 44.4173
     },
     {
       "excluded_by_protocol": false,
@@ -58,9 +58,9 @@
       "index": 5,
       "side": "L",
       "t_end": 26.175,
-      "t_start": 25.4083,
-      "true_d_pitch_deg": 16.1074,
-      "true_peak_roll_deg": 42.7364
+      "t_start": 25.4167,
+      "true_d_pitch_deg": 17.1445,
+      "true_peak_roll_deg": 41.7971
     },
     {
       "excluded_by_protocol": false,
@@ -69,8 +69,8 @@
       "side": "R",
       "t_end": 30.2667,
       "t_start": 29.6167,
-      "true_d_pitch_deg": 14.8945,
-      "true_peak_roll_deg": 36.7551
+      "true_d_pitch_deg": 15.5867,
+      "true_peak_roll_deg": 35.9653
     },
     {
       "excluded_by_protocol": false,
@@ -79,8 +79,8 @@
       "side": "L",
       "t_end": 34.5333,
       "t_start": 33.7833,
-      "true_d_pitch_deg": 17.3183,
-      "true_peak_roll_deg": 42.0868
+      "true_d_pitch_deg": 18.3239,
+      "true_peak_roll_deg": 41.0901
     },
     {
       "excluded_by_protocol": false,
@@ -89,8 +89,8 @@
       "side": "R",
       "t_end": 38.775,
       "t_start": 38.0333,
-      "true_d_pitch_deg": 12.4423,
-      "true_peak_roll_deg": 41.5568
+      "true_d_pitch_deg": 13.3722,
+      "true_peak_roll_deg": 40.7937
     },
     {
       "excluded_by_protocol": true,
@@ -98,9 +98,9 @@
       "index": 9,
       "side": "L",
       "t_end": 46.3333,
-      "t_start": 45.65,
-      "true_d_pitch_deg": 15.5538,
-      "true_peak_roll_deg": 38.0736
+      "t_start": 45.6583,
+      "true_d_pitch_deg": 16.375,
+      "true_peak_roll_deg": 37.2859
     },
     {
       "excluded_by_protocol": false,
@@ -109,28 +109,28 @@
       "side": "R",
       "t_end": 50.5583,
       "t_start": 49.825,
-      "true_d_pitch_deg": 9.8353,
-      "true_peak_roll_deg": 40.8786
+      "true_d_pitch_deg": 10.63,
+      "true_peak_roll_deg": 40.2934
     },
     {
       "excluded_by_protocol": false,
       "exclusion_reason": null,
       "index": 11,
       "side": "L",
-      "t_end": 54.7833,
-      "t_start": 54.025,
-      "true_d_pitch_deg": 17.1836,
-      "true_peak_roll_deg": 42.1625
+      "t_end": 54.775,
+      "t_start": 54.0333,
+      "true_d_pitch_deg": 18.0486,
+      "true_peak_roll_deg": 41.2156
     },
     {
       "excluded_by_protocol": false,
       "exclusion_reason": null,
       "index": 12,
       "side": "R",
-      "t_end": 59.0167,
-      "t_start": 58.2917,
-      "true_d_pitch_deg": 18.541,
-      "true_peak_roll_deg": 40.1387
+      "t_end": 59.0083,
+      "t_start": 58.3,
+      "true_d_pitch_deg": 19.3075,
+      "true_peak_roll_deg": 39.1267
     },
     {
       "excluded_by_protocol": false,
@@ -138,9 +138,9 @@
       "index": 13,
       "side": "L",
       "t_end": 63.225,
-      "t_start": 62.4083,
-      "true_d_pitch_deg": 17.7395,
-      "true_peak_roll_deg": 46.2354
+      "t_start": 62.4167,
+      "true_d_pitch_deg": 18.7606,
+      "true_peak_roll_deg": 45.1795
     },
     {
       "excluded_by_protocol": false,
@@ -148,39 +148,39 @@
       "index": 14,
       "side": "R",
       "t_end": 71.2083,
-      "t_start": 70.3833,
-      "true_d_pitch_deg": 19.8939,
-      "true_peak_roll_deg": 47.3687
+      "t_start": 70.3917,
+      "true_d_pitch_deg": 21.1513,
+      "true_peak_roll_deg": 46.1553
     },
     {
       "excluded_by_protocol": false,
       "exclusion_reason": null,
       "index": 15,
       "side": "L",
-      "t_end": 75.5083,
+      "t_end": 75.5,
       "t_start": 74.75,
-      "true_d_pitch_deg": 13.4809,
-      "true_peak_roll_deg": 42.2713
+      "true_d_pitch_deg": 14.4782,
+      "true_peak_roll_deg": 41.4688
     },
     {
       "excluded_by_protocol": false,
       "exclusion_reason": null,
       "index": 16,
       "side": "R",
-      "t_end": 79.9,
+      "t_end": 79.8917,
       "t_start": 79.1083,
-      "true_d_pitch_deg": 14.6154,
-      "true_peak_roll_deg": 44.4979
+      "true_d_pitch_deg": 15.663,
+      "true_peak_roll_deg": 43.6425
     },
     {
       "excluded_by_protocol": false,
       "exclusion_reason": null,
       "index": 17,
       "side": "L",
-      "t_end": 84.0667,
-      "t_start": 83.3,
-      "true_d_pitch_deg": 14.0489,
-      "true_peak_roll_deg": 42.6853
+      "t_end": 84.0583,
+      "t_start": 83.3083,
+      "true_d_pitch_deg": 14.9427,
+      "true_peak_roll_deg": 41.8549
     }
   ],
   "mount_offset_deg": [
@@ -190,7 +190,7 @@
   ],
   "mount_slip_deg_per_min": 0.0,
   "n_lengths": 4,
-  "pitch_baseline_deg": 8.5636,
+  "pitch_baseline_deg": 4.0,
   "pushoffs": [
     {
       "t": 0.0
@@ -211,6 +211,6 @@
   "summary": {
     "n_breaths": 18,
     "n_valid_breaths": 16,
-    "true_mean_d_pitch_deg": 15.3643
+    "true_mean_d_pitch_deg": 16.338
   }
 }

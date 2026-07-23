@@ -230,6 +230,50 @@ def _tilt_pitch_roll(grav_sensor: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return pitch, roll
 
 
+def _canonical_frame(up_upright: np.ndarray, up_prone: np.ndarray) -> Rotation:
+    """Calibrated-skull frame from two static-pose "up" vectors.
+
+    Identical construction to :func:`swimlab.calibrate.canonical_frame` -- kept
+    in lock-step by the round-trip consistency test in the metrics suite -- so
+    that the ground truth this module emits is exactly what a correctly
+    calibrated pipeline measures. ``up_prone`` (T0b) defines +z exactly (the
+    zero reference); ``up_upright`` (T0a) fixes the azimuth (nose-up -> -x).
+    """
+    z = up_prone / np.linalg.norm(up_prone)
+    x_dir = up_upright - np.dot(up_upright, z) * z
+    x = -x_dir / np.linalg.norm(x_dir)
+    y = np.cross(z, x)
+    return Rotation.from_matrix(np.vstack([x, y, z]))
+
+
+def _gravity_referenced_angles(
+    pitch_deg: np.ndarray, roll_deg: np.ndarray, pitch_baseline_deg: float
+) -> tuple[np.ndarray, np.ndarray]:
+    """Injected intrinsic pitch/roll -> gravity-referenced pitch/roll (degrees).
+
+    The study measures *gravity-referenced* angles relative to the T0b prone
+    pose (CLAUDE.md: "gravity-referenced pitch and roll only"), not the intrinsic
+    Euler angles used to synthesise the motion. The two diverge by a
+    roll-dependent term at large roll, so the emitted ground truth must be
+    expressed the way the pipeline measures it -- otherwise no gravity-referenced
+    pipeline could ever recover it (acceptance test 1). This decodes the clean
+    skull-frame gravity vector through the canonical calibrated frame whose prone
+    reference sits at ``pitch_baseline_deg`` (T0b) and whose upright pose (T0a)
+    is a 90 deg pitch, exactly as :mod:`swimlab.calibrate` reconstructs it.
+    """
+    p = np.radians(np.asarray(pitch_deg, dtype=np.float64))
+    r = np.radians(np.asarray(roll_deg, dtype=np.float64))
+    # Exact clean gravity "up" in the skull frame for R = Ry(pitch) . Rx(roll).
+    u_skull = np.column_stack(
+        [-np.sin(p), np.cos(p) * np.sin(r), np.cos(p) * np.cos(r)]
+    )
+    base = np.radians(pitch_baseline_deg)
+    up_prone = np.array([-np.sin(base), 0.0, np.cos(base)])  # T0b: pitch=baseline, roll=0
+    up_upright = np.array([-1.0, 0.0, 0.0])  # T0a: pitch=90, roll=0
+    calibrated = _canonical_frame(up_upright, up_prone).apply(u_skull)
+    return _tilt_pitch_roll(calibrated)
+
+
 # --------------------------------------------------------------------------- #
 # Archetype sampling
 # --------------------------------------------------------------------------- #
@@ -749,6 +793,7 @@ def generate_trial(
     gyro_bias_walk: bool = True,
     seed: int | None = None,
     yaw_corruption_scale: float = 1.0,
+    pitch_baseline_deg: float | None = None,
     config_path: str | Path | None = None,
 ) -> tuple[pl.DataFrame, dict[str, Any]]:
     """Generate one synthetic front-crawl trial (T7) with ground truth.
@@ -778,6 +823,12 @@ def generate_trial(
     yaw_corruption_scale:
         Multiplies the injected yaw corruption. A test hook for acceptance test
         6 (yaw independence); the accelerometer is unaffected by construction.
+    pitch_baseline_deg:
+        Override the swimmer's habitual head pitch (degrees). When ``None`` it
+        is drawn from ``seed`` per archetype. Because the ground truth is now
+        gravity-referenced relative to the T0b prone pose, a trial and the
+        calibration it is decoded against must share the same baseline (one
+        swimmer, one prone pose); pin both here to pair them.
     config_path:
         Path to ``config.yaml`` (defaults to the repo root copy).
 
@@ -790,6 +841,8 @@ def generate_trial(
     cfg = _load_config(config_path)
     streams = _rng_streams(seed)
     swimmer = _sample_swimmer(archetype, streams["swimmer"])
+    if pitch_baseline_deg is not None:
+        swimmer["pitch_baseline"] = float(pitch_baseline_deg)
 
     timeline = _build_timeline(
         n_lengths,
@@ -821,7 +874,15 @@ def generate_trial(
 
     df = _make_dataframe(t, quat, acc, gyro, mag)
 
-    breaths, summary = _breath_ground_truth(t, pitch, roll, timeline, swimmer, cfg)
+    # Ground truth is expressed in gravity-referenced angles (relative to the
+    # T0b prone pose) -- the quantity the pipeline measures -- not the intrinsic
+    # Euler angles used to drive the orientation. These diverge at large roll.
+    pitch_grav, roll_grav = _gravity_referenced_angles(
+        pitch, roll, swimmer["pitch_baseline"]
+    )
+    breaths, summary = _breath_ground_truth(
+        t, pitch_grav, roll_grav, timeline, swimmer, cfg
+    )
     ground_truth: dict[str, Any] = {
         "archetype": archetype,
         "seed": seed,
@@ -1047,22 +1108,41 @@ def write_fixtures(out_dir: str | Path | None = None) -> list[Path]:
         gj.write_text(json.dumps(gt, indent=2, sort_keys=True), encoding="utf-8")
         written.extend([pq, gj])
 
-    # One clean and one noisy trial per archetype, with deterministic seeds.
+    # All committed trials share one prone baseline with the committed
+    # calibration poses (BASELINE below). The ground truth is gravity-referenced
+    # relative to T0b, so a trial only round-trips against a calibration at the
+    # same baseline -- one swimmer, one prone pose. Pinning the baseline lets the
+    # single committed calibration decode every trial fixture.
+    BASELINE = 4.0
+    NOISY_MOUNT = (3.0, -2.0, 12.0)
+
+    # One noisy trial per archetype, with deterministic seeds.
     for i, arch in enumerate(sorted(ARCHETYPES)):
         df, gt = generate_trial(
-            arch, mount_offset_deg=(3.0, -2.0, 12.0), noise=True, seed=100 + i
+            arch, mount_offset_deg=NOISY_MOUNT, noise=True, seed=100 + i,
+            pitch_baseline_deg=BASELINE,
         )
         _dump(f"trial_{arch.lower()}", df, gt)
 
-    # A zero-noise, zero-offset round-trip fixture (for spec test 1 downstream).
+    # A zero-noise, zero-offset round-trip fixture (for spec test 1 downstream),
+    # paired with a matching zero-noise, zero-offset calibration.
     df, gt = generate_trial(
-        "LIFTER", mount_offset_deg=(0.0, 0.0, 0.0), noise=False, seed=7
+        "LIFTER", mount_offset_deg=(0.0, 0.0, 0.0), noise=False, seed=7,
+        pitch_baseline_deg=BASELINE,
     )
     _dump("trial_lifter_clean", df, gt)
+    clean_segs, _ = generate_calibration(
+        mount_offset_deg=(0.0, 0.0, 0.0), pitch_baseline_deg=BASELINE,
+        noise=False, seed=1,
+    )
+    for seg_name, seg_df in clean_segs.items():
+        pq = out_dir / f"calib_clean_{seg_name}.parquet"
+        seg_df.write_parquet(pq)
+        written.append(pq)
 
-    # Calibration: good and bad.
+    # Calibration: good and bad (mounted, matching the archetype trials).
     segs, gt = generate_calibration(
-        mount_offset_deg=(3.0, -2.0, 12.0), pitch_baseline_deg=4.0, seed=1
+        mount_offset_deg=NOISY_MOUNT, pitch_baseline_deg=BASELINE, seed=1
     )
     for seg_name, seg_df in segs.items():
         pq = out_dir / f"calib_{seg_name}.parquet"

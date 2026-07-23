@@ -7,10 +7,10 @@
       "exclusion_reason": "within_4s_of_pushoff",
       "index": 0,
       "side": "R",
-      "t_end": 2.9083,
-      "t_start": 1.9583,
-      "true_d_pitch_deg": 7.2036,
-      "true_peak_roll_deg": 58.8441
+      "t_end": 2.9,
+      "t_start": 1.9667,
+      "true_d_pitch_deg": 9.0473,
+      "true_peak_roll_deg": 58.1633
     },
     {
       "excluded_by_protocol": false,
@@ -19,18 +19,18 @@
       "side": "L",
       "t_end": 7.225,
       "t_start": 6.3667,
-      "true_d_pitch_deg": 8.8351,
-      "true_peak_roll_deg": 50.4778
+      "true_d_pitch_deg": 10.1156,
+      "true_peak_roll_deg": 49.8635
     },
     {
       "excluded_by_protocol": false,
       "exclusion_reason": null,
       "index": 2,
       "side": "R",
-      "t_end": 11.425,
+      "t_end": 11.4167,
       "t_start": 10.525,
-      "true_d_pitch_deg": 10.6319,
-      "true_peak_roll_deg": 53.8721
+      "true_d_pitch_deg": 12.0738,
+      "true_peak_roll_deg": 53.0906
     },
     {
       "excluded_by_protocol": false,
@@ -39,8 +39,8 @@
       "side": "L",
       "t_end": 15.6,
       "t_start": 14.6583,
-      "true_d_pitch_deg": 14.2058,
-      "true_peak_roll_deg": 58.6898
+      "true_d_pitch_deg": 15.9302,
+      "true_peak_roll_deg": 57.6472
     },
     {
       "excluded_by_protocol": false,
@@ -49,28 +49,28 @@
       "side": "R",
       "t_end": 19.75,
       "t_start": 18.8667,
-      "true_d_pitch_deg": 13.1548,
-      "true_peak_roll_deg": 52.4186
+      "true_d_pitch_deg": 14.5477,
+      "true_peak_roll_deg": 51.4953
     },
     {
       "excluded_by_protocol": false,
       "exclusion_reason": null,
       "index": 5,
       "side": "L",
-      "t_end": 27.4833,
+      "t_end": 27.475,
       "t_start": 26.5917,
-      "true_d_pitch_deg": 6.6699,
-      "true_peak_roll_deg": 52.5533
+      "true_d_pitch_deg": 8.1481,
+      "true_peak_roll_deg": 52.0321
     },
     {
       "excluded_by_protocol": false,
       "exclusion_reason": null,
       "index": 6,
       "side": "R",
-      "t_end": 31.675,
+      "t_end": 31.6667,
       "t_start": 30.75,
-      "true_d_pitch_deg": 8.375,
-      "true_peak_roll_deg": 56.4095
+      "true_d_pitch_deg": 10.0323,
+      "true_peak_roll_deg": 55.7327
     },
     {
       "excluded_by_protocol": false,
@@ -79,18 +79,18 @@
       "side": "L",
       "t_end": 35.825,
       "t_start": 35.05,
-      "true_d_pitch_deg": 2.0318,
-      "true_peak_roll_deg": 43.1067
+      "true_d_pitch_deg": 2.8927,
+      "true_peak_roll_deg": 42.8902
     },
     {
       "excluded_by_protocol": false,
       "exclusion_reason": null,
       "index": 8,
       "side": "R",
-      "t_end": 40.0583,
+      "t_end": 40.05,
       "t_start": 39.1333,
-      "true_d_pitch_deg": 15.4612,
-      "true_peak_roll_deg": 56.4989
+      "true_d_pitch_deg": 17.1507,
+      "true_peak_roll_deg": 55.3699
     },
     {
       "excluded_by_protocol": true,
@@ -99,8 +99,8 @@
       "side": "L",
       "t_end": 46.8,
       "t_start": 45.875,
-      "true_d_pitch_deg": 8.9742,
-      "true_peak_roll_deg": 56.528
+      "true_d_pitch_deg": 10.6019,
+      "true_peak_roll_deg": 55.8437
     },
     {
       "excluded_by_protocol": false,
@@ -108,9 +108,9 @@
       "index": 10,
       "side": "R",
       "t_end": 51.0167,
-      "t_start": 50.0,
-      "true_d_pitch_deg": 5.4051,
-      "true_peak_roll_deg": 68.4695
+      "t_start": 50.0083,
+      "true_d_pitch_deg": 7.5403,
+      "true_peak_roll_deg": 67.9344
     },
     {
       "excluded_by_protocol": false,
@@ -118,9 +118,9 @@
       "index": 11,
       "side": "L",
       "t_end": 55.125,
-      "t_start": 54.2333,
-      "true_d_pitch_deg": 3.5206,
-      "true_peak_roll_deg": 53.1019
+      "t_start": 54.2417,
+      "true_d_pitch_deg": 4.5671,
+      "true_peak_roll_deg": 52.7925
     },
     {
       "excluded_by_protocol": false,
@@ -128,9 +128,9 @@
       "index": 12,
       "side": "R",
       "t_end": 59.2667,
-      "t_start": 58.3917,
-      "true_d_pitch_deg": 4.172,
-      "true_peak_roll_deg": 51.2412
+      "t_start": 58.4,
+      "true_d_pitch_deg": 5.1955,
+      "true_peak_roll_deg": 50.8999
     },
     {
       "excluded_by_protocol": true,
@@ -139,28 +139,28 @@
       "side": "L",
       "t_end": 66.7917,
       "t_start": 65.9083,
-      "true_d_pitch_deg": 2.5436,
-      "true_peak_roll_deg": 51.9859
+      "true_d_pitch_deg": 4.039,
+      "true_peak_roll_deg": 51.6655
     },
     {
       "excluded_by_protocol": false,
       "exclusion_reason": null,
       "index": 14,
       "side": "R",
-      "t_end": 70.9833,
-      "t_start": 70.0167,
-      "true_d_pitch_deg": 9.5457,
-      "true_peak_roll_deg": 61.177
+      "t_end": 70.975,
+      "t_start": 70.025,
+      "true_d_pitch_deg": 11.5312,
+      "true_peak_roll_deg": 60.3742
     },
     {
       "excluded_by_protocol": false,
       "exclusion_reason": null,
       "index": 15,
       "side": "L",
-      "t_end": 75.15,
+      "t_end": 75.1417,
       "t_start": 74.2667,
-      "true_d_pitch_deg": 10.2385,
-      "true_peak_roll_deg": 51.9096
+      "true_d_pitch_deg": 11.7106,
+      "true_peak_roll_deg": 51.1689
     },
     {
       "excluded_by_protocol": false,
@@ -169,8 +169,8 @@
       "side": "R",
       "t_end": 79.475,
       "t_start": 78.5333,
-      "true_d_pitch_deg": 7.5393,
-      "true_peak_roll_deg": 58.5075
+      "true_d_pitch_deg": 9.4169,
+      "true_peak_roll_deg": 57.8574
     },
     {
       "excluded_by_protocol": true,
@@ -178,9 +178,9 @@
       "index": 17,
       "side": "L",
       "t_end": 83.5833,
-      "t_start": 82.7667,
-      "true_d_pitch_deg": 3.5542,
-      "true_peak_roll_deg": 46.0792
+      "t_start": 82.775,
+      "true_d_pitch_deg": 4.6838,
+      "true_peak_roll_deg": 45.7254
     }
   ],
   "mount_offset_deg": [
@@ -190,7 +190,7 @@
   ],
   "mount_slip_deg_per_min": 0.0,
   "n_lengths": 4,
-  "pitch_baseline_deg": 1.8475,
+  "pitch_baseline_deg": 4.0,
   "pushoffs": [
     {
       "t": 0.0
@@ -211,6 +211,6 @@
   "summary": {
     "n_breaths": 18,
     "n_valid_breaths": 14,
-    "true_mean_d_pitch_deg": 8.5562
+    "true_mean_d_pitch_deg": 10.0609
   }
 }

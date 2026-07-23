@@ -16,27 +16,19 @@ non-breath window ``[max(prev_breath_end, t_start - L), t_start)`` with ``L``
 roll signal (see swimlab/metrics.py). One whole oscillation period avoids the
 phase-dependent bias of a non-integer (e.g. 1.5-cycle) window.
 
-Two distinct effects govern recovery of the synthetic ``true_d_pitch_deg``:
+The synthetic ``true_d_pitch_deg`` is **gravity-referenced** (relative to the
+T0b prone pose) -- the same quantity the pipeline measures -- so with a matching
+calibration the pipeline recovers it tightly and *roll-independently*: high-roll
+ROTATOR breaths recover as well as low-roll ones (there is no tilt cross-talk,
+because calibrate's canonical frame anchors the zero reference to T0b exactly).
+Zero-noise recovery is within 0.5 deg for every archetype; full-noise committed
+fixtures recover the trial mean within 2 deg.
 
-* **Baseline-window phase.** Using one whole stroke-cycle removes the
-  non-integer-window median bias.
-* **Gravity-tilt pitch/roll cross-talk (residual, roll-dependent).** At the
-  breath apex head pitch and head roll are simultaneously large; the tilt
-  equations in ``calibrate.apply`` then read pitch a little high, in
-  proportion to the roll. Against the intrinsic-Euler ground truth this shows
-  up as a systematic *positive* d_pitch over-read that **scales with peak
-  roll** (~+0.04 deg per degree of roll), NOT with the baseline window. It is
-  therefore not removable by any baseline choice -- it is a measurement-model
-  property of calibrate + the metric definition.
-
-Consequences for the zero-noise bound: modest-roll breaths recover within
-0.5 deg; large-roll breaths carry the roll-scaled residual. This is quantified
-and pinned honestly by ``test_d_pitch_error_scales_with_breath_roll`` rather
-than hidden. Full-noise committed fixtures recover the trial mean within 2 deg.
-
-All committed noisy fixtures share mount (3, -2, 12) with the committed
-calibration poses, so one transform fit from ``calib_t0a/t0b`` calibrates them
-all (same convention as test_events.py).
+Because the ground truth is gravity-referenced relative to the prone pose, a
+trial only round-trips against a calibration at the *same* prone baseline (one
+swimmer, one prone pose). The committed trial fixtures are therefore pinned to
+the same ``pitch_baseline`` as the committed ``calib_t0a/t0b`` poses, and
+freshly generated trials build a matching calibration via ``_from_synth``.
 """
 
 from __future__ import annotations
@@ -281,47 +273,71 @@ def test_d_pitch_zero_noise_low_bias_archetypes(archetype, seed):
     assert abs(errs.mean()) < 0.5, f"{archetype} mean d_pitch err={errs.mean():+.3f}"
 
 
-def test_d_pitch_error_scales_with_breath_roll_not_baseline():
-    """The systematic zero-noise d_pitch over-read is a *roll-dependent* tilt
-    cross-talk, NOT a baseline-window artifact. Pinned honestly: (a) d_pitch
-    error correlates positively with peak roll, and (b) changing the baseline
-    window length leaves the mean error essentially unchanged, whereas roll
-    binning splits it strongly. This documents that no baseline choice removes
-    the residual (contra a pure baseline-phase explanation)."""
+def test_d_pitch_recovery_is_tight_and_roll_independent():
+    """Zero-noise d_pitch recovery is tight and does NOT depend on breath roll.
+
+    Because the ground truth is gravity-referenced (relative to the T0b prone
+    pose) and calibrate anchors that zero reference to T0b exactly, there is no
+    roll-dependent pitch cross-talk: high-roll ROTATOR breaths recover as well
+    as low-roll ones. Pooled over archetypes and seeds, the per-breath error is
+    sub-degree and essentially uncorrelated with peak roll -- the regression
+    that an earlier (align_vectors) calibration frame exhibited."""
     rolls, errs = [], []
-    err_by_L = {}
-    for L in (None, 2.0, 3.5):  # None = data-driven one cycle
-        pooled = []
-        for archetype in ("LIFTER", "ROTATOR", "MIXED", "ASYMMETRIC"):
-            for seed in range(2, 12):
-                cal, marked, gt = _from_synth(archetype, seed=seed, noise=False)
-                pb = metrics.per_breath_metrics(cal, marked, baseline_window_s=L)
-                mapping = _match_to_gt(pb, gt["breaths"])
-                d = pb["d_pitch_breath"].to_numpy()
-                pr = pb["peak_roll_breath"].to_numpy()
-                excl = pb["excluded"].to_numpy().astype(bool)
-                for di, gi in mapping.items():
-                    if excl[di]:
-                        continue
-                    e = d[di] - gt["breaths"][gi]["true_d_pitch_deg"]
-                    pooled.append(e)
-                    if L is None:
-                        rolls.append(pr[di])
-                        errs.append(e)
-        err_by_L[L] = float(np.mean(pooled))
+    for archetype in ("LIFTER", "ROTATOR", "MIXED", "ASYMMETRIC"):
+        for seed in range(2, 12):
+            cal, marked, gt = _from_synth(archetype, seed=seed, noise=False)
+            pb = metrics.per_breath_metrics(cal, marked)
+            mapping = _match_to_gt(pb, gt["breaths"])
+            d = pb["d_pitch_breath"].to_numpy()
+            pr = pb["peak_roll_breath"].to_numpy()
+            excl = pb["excluded"].to_numpy().astype(bool)
+            for di, gi in mapping.items():
+                if excl[di]:
+                    continue
+                errs.append(d[di] - gt["breaths"][gi]["true_d_pitch_deg"])
+                rolls.append(pr[di])
 
     rolls = np.array(rolls)
     errs = np.array(errs)
-    # (a) positive correlation of error with roll
-    corr = float(np.corrcoef(rolls, errs)[0, 1])
-    assert corr > 0.3, f"d_pitch error should rise with roll, corr={corr:.3f}"
-    # (b) high-roll breaths over-read much more than low-roll breaths
+    # tight per-breath recovery, well within the 0.5 deg zero-noise bar
+    assert np.abs(errs).mean() < 0.3, f"mean |err|={np.abs(errs).mean():.3f} deg"
+    assert np.abs(errs).max() < 0.5, f"max |err|={np.abs(errs).max():.3f} deg"
+    # and no roll cross-talk: high-roll breaths are no worse than low-roll ones
     hi = rolls > np.quantile(rolls, 0.75)
     lo = rolls < np.quantile(rolls, 0.25)
-    assert errs[hi].mean() - errs[lo].mean() > 1.0
-    # (c) the mean error barely moves across very different baseline windows
-    spread = max(err_by_L.values()) - min(err_by_L.values())
-    assert spread < 0.6, f"baseline window changes mean err by only {spread:.3f} deg"
+    assert abs(errs[hi].mean() - errs[lo].mean()) < 0.3
+    assert abs(float(np.corrcoef(rolls, errs)[0, 1])) < 0.5
+
+
+def test_clean_fixture_round_trips_to_ground_truth():
+    """Cross-module drift guard: the committed zero-noise round-trip fixture
+    (``trial_lifter_clean`` + ``calib_clean_*``) recovers the gravity-referenced
+    ground-truth ``d_pitch``/``peak_roll`` to a small fraction of a degree.
+
+    synth (ground truth) and calibrate (measurement) keep private copies of the
+    canonical-frame construction for module independence; if they ever drift,
+    this exact round-trip breaks -- catching it here rather than three modules
+    downstream."""
+    df = pl.read_parquet(FIXTURES / "trial_lifter_clean.parquet")
+    gt = json.loads((FIXTURES / "trial_lifter_clean.gt.json").read_text())
+    t0a = pl.read_parquet(FIXTURES / "calib_clean_t0a.parquet")
+    t0b = pl.read_parquet(FIXTURES / "calib_clean_t0b.parquet")
+    R = calibrate.fit_transform(t0a, t0b)
+    cal, marked = _pipeline(df, R)
+    pb = metrics.per_breath_metrics(cal, marked)
+    mapping = _match_to_gt(pb, gt["breaths"])
+    d = pb["d_pitch_breath"].to_numpy()
+    pr = pb["peak_roll_breath"].to_numpy()
+    excl = pb["excluded"].to_numpy().astype(bool)
+    matched = 0
+    for di, gi in mapping.items():
+        if excl[di]:
+            continue
+        b = gt["breaths"][gi]
+        assert abs(d[di] - b["true_d_pitch_deg"]) < 0.3, f"d_pitch drift at breath {gi}"
+        assert abs(pr[di] - b["true_peak_roll_deg"]) < 0.3, f"peak_roll drift at breath {gi}"
+        matched += 1
+    assert matched >= 8
 
 
 @pytest.mark.parametrize(
