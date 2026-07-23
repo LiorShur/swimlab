@@ -59,7 +59,7 @@ Computed on T7 (4 × 25 m front crawl, breathing every 3).
 | `pitch_variability` | SD of `d_pitch_breath` across cycles | ° |
 | `pitch_drift_100m` | slope of per-length median pitch across T9 | °/length |
 
-`roll_pitch_ratio` is a candidate to replace `d_pitch_breath` as the primary gate — it is dimensionless and may be more robust to mount variation. Both are computed; the study decides.
+`roll_pitch_ratio` was proposed as a candidate to replace `d_pitch_breath` as the primary gate — dimensionless, and hypothesised to be more robust to mount variation. **Synthetic-pipeline analysis does not support this** (to be confirmed on real swimmers): after calibration *both* metrics are exactly invariant to a fixed mount offset — calibration removes it — so neither is "more robust" there; and under progressive mount *slip* `roll_pitch_ratio` degrades **more** than `d_pitch_breath` (≈2× the relative drift at 10°/min across LIFTER/ROTATOR/MIXED), because the ratio compounds pitch and roll errors. It is also undefined for low-roll swimmers. On the mount-robustness criterion `d_pitch_breath` is therefore the better primary gate. Both are still computed (the study confirms on real data); the slip/variation comparison is pinned in `tests/test_integration.py`.
 
 **Breath window:** roll crosses ±25° from baseline, first crossing to return. This detector must be validated frame-by-frame against video on the first two participants before batch processing.
 

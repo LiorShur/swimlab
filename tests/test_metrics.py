@@ -421,12 +421,21 @@ def test_summary_uses_only_valid_breaths():
 
 
 def test_summary_flags_bubble_up_insufficient_cycles():
-    """A full 4x25 T7 falls below config min_valid_cycles (events sets the flag
-    on every breath); the summary surfaces it once."""
-    cal, marked, _ = _from_fixture("trial_lifter")
+    """A genuinely short session (1 length -> ~6 valid breaths) falls below
+    config min_valid_cycles; events sets the flag on every breath and the
+    summary surfaces it once. (A full recreational 4-length T7 clears the gate
+    -- see test_events.test_full_4length_t7_clears_config_min_valid_cycles.)"""
+    df, gt = synth.generate_trial("LIFTER", n_lengths=1, noise=False, seed=3)
+    base = gt["pitch_baseline_deg"]
+    calib, _ = synth.generate_calibration(
+        mount_offset_deg=tuple(gt["mount_offset_deg"]),
+        pitch_baseline_deg=base, noise=False, seed=3,
+    )
+    R = calibrate.fit_transform(calib["t0a"], calib["t0b"])
+    cal, marked = _pipeline(df, R)
     pb = metrics.per_breath_metrics(cal, marked)
     summ = metrics.trial_summary(pb).to_dicts()[0]
-    # events sets INSUFFICIENT_CYCLES because 16 valid < 20; it must appear.
+    assert summ["n_valid"] < 20
     assert events.INSUFFICIENT_CYCLES in summ["flags"]
 
 

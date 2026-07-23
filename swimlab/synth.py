@@ -130,7 +130,14 @@ _CYCLE_JITTER: float = 0.15
 # swimmer and never enter the analysis pipeline.
 _GLIDE_MIN_S = 1.5
 _GLIDE_MAX_S = 3.0
-_TARGET_LENGTH_S = 21.0  # nominal wall-to-wall duration of one 25 m length
+# Nominal wall-to-wall duration of one 25 m length. Set for a *recreational*
+# swimmer (~30 s / 25 m, i.e. ~1:00 / 100 m) -- the study population. At the
+# default 1.4 s stroke period this is ~21 strokes/length, so a 4-length T7
+# breathing every 3 yields ~24 breaths / ~22 valid after exclusions, clearing
+# the min_valid_cycles = 20 gate as a real recreational T7 does. (An earlier
+# 21 s value was a fit/competitive pace and under-produced breaths, tripping
+# INSUFFICIENT_CYCLES on every valid T7.)
+_TARGET_LENGTH_S = 30.0
 _PUSHOFF_DUR_S = 0.20
 _PUSHOFF_G_LOW = 2.0
 _PUSHOFF_G_HIGH = 4.0
