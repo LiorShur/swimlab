@@ -73,7 +73,7 @@ Computed on T7 (4 × 25 m front crawl, breathing every 3).
 
 ```
 swimlab/
-  io.py          DOT export → canonical dataframe.  BLOCKED: needs a real export file.
+  io.py          DOT export → canonical dataframe.  DRAFT: written against the documented format; validate on the first real export.
   synth.py       Synthetic trace generator with ground truth.  BUILD FIRST.
   calibrate.py   T0a/T0b → sensor-to-skull transform + pose sanity check
   events.py      Push-off detection, breath window detection
@@ -92,6 +92,6 @@ swimlab/
 
 ## Working notes
 
-- `io.py` is blocked until a real Movella DOT export exists. Do not guess the column schema. Everything else is built and tested against `synth.py`.
+- `io.py` is **drafted against Movella's documented CSV format but not yet validated against a real export.** Every format assumption is flagged `# TODO(real-file)`. When the first real recording exists, run `io.validate_dot_export(path)` — it reports PASS/WARN/FAIL for each assumption (columns, sample rate, quaternion norm, acceleration-with-gravity, ENU-vs-NED gravity frame) — then correct the flagged constants before trusting the output. Until then `read_dot_export` is exercised only against a synthetic CSV in the assumed format (self-consistency, not format confirmation). Everything else is built and tested against `synth.py`.
 - Build order: `synth` → `calibrate` → `events` → `metrics` → `stats` → `report` → `io`.
 - These modules share almost no state beyond the canonical schema. Use a fresh session per module.
