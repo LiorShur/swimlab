@@ -1258,6 +1258,38 @@ def _peak_roll_per_stroke(
     return out
 
 
+def _forearm_angle_signals(
+    t: np.ndarray,
+    timeline: dict[str, Any],
+    side: str,
+    stroke_period_s: float,
+    pull_amp_deg: float,
+    recovery_amp_deg: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Forearm pitch/roll (deg) for one arm, in the calibrated forearm frame.
+
+    Zero pitch = arm extended forward-horizontal (the calibration reference). One
+    arm cycle spans two strokes: a negative **pull** dip (hand below the forward
+    line, under water -- catch through push) at each *same-side* stroke, and a
+    positive **recovery** bump (hand above, over water) at the midpoint between
+    consecutive pulls. During a glide no strokes fall, so the arm rests near the
+    forward-extended zero. The two arms are antiphase by construction: the right
+    arm pulls on the ``"R"`` strokes, the left on the ``"L"`` strokes, half a
+    cycle apart. Roll carries a small pronation/supination wobble.
+    """
+    half = 0.42 * stroke_period_s
+    same = [s["t"] for s in timeline["strokes"] if s["side"] == side]
+    pitch = np.zeros_like(t)
+    for tp in same:
+        pitch -= pull_amp_deg * _raised_cosine(t, tp, half)
+    for k in range(len(same) - 1):
+        gap = same[k + 1] - same[k]
+        if gap < 2.5 * (2.0 * stroke_period_s):  # same length, not across a wall
+            pitch += recovery_amp_deg * _raised_cosine(t, 0.5 * (same[k] + same[k + 1]), half)
+    roll = 8.0 * np.sin(2.0 * np.pi * t / (2.0 * stroke_period_s))
+    return pitch, roll
+
+
 def generate_swim(
     archetype: str,
     n_lengths: int = 4,
@@ -1266,6 +1298,9 @@ def generate_swim(
     pool_length_m: float = 25.0,
     body_roll_amp_deg: float = 48.0,
     roll_asymmetry_frac: float = 0.0,
+    arm_pull_amp_deg: float = 70.0,
+    arm_recovery_amp_deg: float = 45.0,
+    arm_asymmetry_frac: float = 0.0,
     seed: int | None = None,
     pitch_baseline_deg: float | None = None,
     config_path: str | Path | None = None,
@@ -1347,6 +1382,34 @@ def generate_swim(
         lin_accel_segment=_forward_linear_accel(t, timeline, stroke_period_s, surge_amp=1.0),
     )
 
+    # ----- forearm segments (left / right) ------------------------------------
+    segments: dict[str, SegmentKinematics] = {"skull": skull, "pelvis": pelvis}
+    arm_truth: dict[str, Any] = {}
+    for side, seg_name in (("R", "forearm_r"), ("L", "forearm_l")):
+        pull_amp = arm_pull_amp_deg * (1.0 + (arm_asymmetry_frac if side == "R" else -arm_asymmetry_frac))
+        rec_amp = arm_recovery_amp_deg * (1.0 + (arm_asymmetry_frac if side == "R" else -arm_asymmetry_frac))
+        fa_pitch, fa_roll = _forearm_angle_signals(
+            t, timeline, side, stroke_period_s, pull_amp, rec_amp
+        )
+        segments[seg_name] = SegmentKinematics(
+            r_body=_segment_r_body(fa_pitch, fa_roll),
+            lin_accel_segment=_forward_linear_accel(t, timeline, stroke_period_s),
+        )
+        pull_times = [float(s["t"]) for s in timeline["strokes"] if s["side"] == side]
+        arm_cycles = np.diff(pull_times)
+        in_cycle = arm_cycles[arm_cycles < 2.0 * (2.0 * stroke_period_s)]
+        mean_cycle = float(np.mean(in_cycle)) if in_cycle.size else 2.0 * stroke_period_s
+        arm_truth[side] = {
+            "segment": seg_name,
+            "stroke_count": len(pull_times),
+            "pull_times": [round(p, 4) for p in pull_times],
+            "mean_cycle_s": round(mean_cycle, 4),
+            "stroke_rate_cpm": round(60.0 / mean_cycle, 3),
+            "pull_amp_deg": round(pull_amp, 3),
+            "recovery_amp_deg": round(rec_amp, 3),
+            "pitch_amplitude_deg": round(pull_amp + rec_amp, 3),
+        }
+
     # ----- ground truth (gravity-referenced, the quantity a sensor measures) --
     head_pitch_grav, head_roll_grav = _gravity_referenced_angles(
         head_pitch, head_roll, swimmer["pitch_baseline"]
@@ -1406,6 +1469,7 @@ def generate_swim(
         ),
         "stroke_rolls": stroke_rolls,
         "head": {"breaths": breaths, "summary": head_summary},
+        "arms": arm_truth,
     }
 
     meta = {
@@ -1418,11 +1482,12 @@ def generate_swim(
         "sample_rate_hz": SAMPLE_RATE_HZ,
         "pitch_baseline_deg": round(swimmer["pitch_baseline"], 4),
         "pelvis_baseline_deg": pelvis_baseline,
+        "forearm_baseline_deg": 0.0,  # zero = arm forward-horizontal
     }
 
     return BodyModel(
         t=t,
-        segments={"skull": skull, "pelvis": pelvis},
+        segments=segments,
         timeline=timeline,
         swimmer=swimmer,
         truth=truth,

@@ -18,3 +18,9 @@ calib_pose_tolerance_deg: 10.0
 # first real swimmer. Stroke detection reads the gravity-referenced body roll.
 sacrum_stroke_roll_min_deg: 15.0        # min |roll| deviation to count a stroke lobe
 sacrum_min_stroke_separation_s: 0.5     # merge sub-threshold dips within one lobe
+
+# Wrist (forearm) placement thresholds. Stroke detection reads the gravity-
+# referenced forearm pitch (zero = arm forward-horizontal): a pull is a lobe
+# where the hand drops below the forward line (pitch << 0, under water).
+wrist_pull_pitch_min_deg: 25.0          # min downward pitch to count a pull (catch->exit)
+wrist_min_stroke_separation_s: 0.6      # merge sub-threshold dips within one pull

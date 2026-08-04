@@ -178,12 +178,15 @@ PLACEMENTS: dict[str, Placement] = {
         id="wrist_l",
         segment="forearm_l",
         side="L",
-        calibration=(_ARM_OVERHEAD, _ARM_SIDE),
+        calibration=(_ARM_FORWARD, _ARM_SIDE),
         expected_pair_angle_deg=90.0,
         frame=(
-            "Calibrated left-forearm frame, gravity-referenced. pitch tracks the "
-            "hand's rise/fall through the stroke; roll tracks pronation/supination. "
-            "yaw: unused."
+            "Calibrated left-forearm frame, gravity-referenced, zero at arm "
+            "extended forward-horizontal. pitch: + = hand above the forward line "
+            "(recovery over water), - = hand below (catch/pull under water); roll "
+            "tracks pronation/supination. yaw: unused. (Calibration poses are "
+            "forward-horizontal + arm-at-side, ~90 deg apart -- overhead vs side "
+            "would be ~180 deg and cannot span a frame.)"
         ),
         metrics=(
             "stroke_count",
@@ -200,12 +203,13 @@ PLACEMENTS: dict[str, Placement] = {
         id="wrist_r",
         segment="forearm_r",
         side="R",
-        calibration=(_ARM_OVERHEAD, _ARM_SIDE),
+        calibration=(_ARM_FORWARD, _ARM_SIDE),
         expected_pair_angle_deg=90.0,
         frame=(
-            "Calibrated right-forearm frame, gravity-referenced. pitch tracks the "
-            "hand's rise/fall through the stroke; roll tracks pronation/supination. "
-            "yaw: unused."
+            "Calibrated right-forearm frame, gravity-referenced, zero at arm "
+            "extended forward-horizontal. pitch: + = hand above the forward line "
+            "(recovery over water), - = hand below (catch/pull under water); roll "
+            "tracks pronation/supination. yaw: unused."
         ),
         metrics=(
             "stroke_count",

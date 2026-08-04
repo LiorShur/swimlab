@@ -92,7 +92,7 @@ def test_virtual_sensor_accepts_placement_object_and_raw_segment() -> None:
 def test_body_missing_segment_raises() -> None:
     body = synth.generate_swim("FLAT", seed=3, pitch_baseline_deg=4.0)
     with pytest.raises(KeyError, match="no segment"):
-        synth.virtual_sensor(body, "forearm_l", seed=3)  # not built in Phase 0
+        synth.virtual_sensor(body, "shank_l", seed=3)  # ankle segment not built yet
 
 
 # --------------------------------------------------------------------------- #
