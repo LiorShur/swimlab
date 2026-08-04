@@ -171,7 +171,7 @@ PLACEMENTS: dict[str, Placement] = {
             "pace_drift",
         ),
         module="swimlab.sacrum",
-        implemented=False,
+        implemented=True,
         notes="Highest-value single sensor: time/lengths/stroke-count/rate/distance.",
     ),
     "wrist_l": Placement(
@@ -196,7 +196,7 @@ PLACEMENTS: dict[str, Placement] = {
             "entry_exit_timing",
         ),
         module="swimlab.wrist",
-        implemented=False,
+        implemented=True,
         notes="Per-arm stroke phases; pairs with wrist_r for L/R symmetry.",
     ),
     "wrist_r": Placement(
@@ -219,7 +219,7 @@ PLACEMENTS: dict[str, Placement] = {
             "entry_exit_timing",
         ),
         module="swimlab.wrist",
-        implemented=False,
+        implemented=True,
         notes="Per-arm stroke phases; pairs with wrist_l for L/R symmetry.",
     ),
     "upper_arm_l": Placement(
