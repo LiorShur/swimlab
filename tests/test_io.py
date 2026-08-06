@@ -143,6 +143,31 @@ def test_roundtrip_free_acceleration_reconstructs_gravity(tmp_path, trial):
         assert np.allclose(out[c].to_numpy(), trial[c].to_numpy(), atol=1e-6), c
 
 
+def test_write_dot_export_custom_mode_5_roundtrips(tmp_path, trial):
+    """write_dot_export (Custom Mode 5) then read_dot_export recovers the canonical
+    data — the synth → DOT-CSV → reader loop, validatable with no hardware."""
+    p = tmp_path / "cm5_export.csv"
+    io.write_dot_export(trial, p, mode="custom5")
+    # a Custom Mode 5 file validates cleanly (raw acc, quaternion, gyro; no mag)
+    rep = io.validate_dot_export(p)
+    assert rep.ok, str(rep)
+    out = io.read_dot_export(p)
+    assert out.columns == list(io.CANONICAL_COLUMNS)
+    for c in ("t", "quat_w", "quat_z", "acc_x", "acc_z", "gyr_y"):
+        assert np.allclose(out[c].to_numpy(), trial[c].to_numpy(), atol=1e-5), c
+    assert out["mag_x"].is_nan().all()  # Custom Mode 5 has no magnetometer
+
+
+def test_write_dot_export_free_acceleration_roundtrips(tmp_path, trial):
+    """The Complete-Quaternion export writes FreeAcc_*; the reader reconstructs
+    gravity-inclusive acc back to the original."""
+    p = tmp_path / "cq_export.csv"
+    io.write_dot_export(trial, p, mode="complete_quaternion")
+    out = io.read_dot_export(p)
+    for c in ("acc_x", "acc_y", "acc_z"):
+        assert np.allclose(out[c].to_numpy(), trial[c].to_numpy(), atol=1e-5), c
+
+
 def test_read_output_is_pipeline_compatible(tmp_path):
     """A read-back export runs through calibrate->events->metrics and matches the
     same pipeline on the original synth dataframe (io is a faithful front-end)."""
@@ -183,12 +208,23 @@ def test_validate_good_export_passes(tmp_path, trial):
     assert by["gravity_frame"] == "PASS"
 
 
-def test_validate_flags_missing_gyro(tmp_path, trial):
+def test_validate_warns_on_missing_gyro(tmp_path, trial):
+    """Gyro is unused downstream (Complete Quaternion mode has none), so a missing
+    gyroscope is a WARN, not a failure — the file is still usable."""
     p = tmp_path / "nogyr.csv"
     _write_fake_dot_csv(trial, p, drop=("Gyr_X", "Gyr_Y", "Gyr_Z"))
     rep = io.validate_dot_export(p)
+    assert rep.ok, str(rep)  # gyro optional -> still OK
+    assert any(c.name == "gyr_columns" and c.status == "WARN" for c in rep.checks)
+
+
+def test_validate_fails_on_missing_acceleration(tmp_path, trial):
+    """Acceleration IS required (push-off detection). Dropping it must FAIL."""
+    p = tmp_path / "noacc.csv"
+    _write_fake_dot_csv(trial, p, drop=("Acc_X", "Acc_Y", "Acc_Z"))
+    rep = io.validate_dot_export(p)
     assert not rep.ok
-    assert any(c.name == "gyr_columns" and c.status == "FAIL" for c in rep.checks)
+    assert any(c.name == "acc_columns" and c.status == "FAIL" for c in rep.checks)
 
 
 def test_validate_warns_on_free_acceleration(tmp_path, trial):

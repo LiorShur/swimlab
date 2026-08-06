@@ -270,10 +270,14 @@ def read_dot_export(
             f"{list(_FREEACC_MAP.values())}. Re-export in a mode that includes acceleration."
         )
 
-    if not all(v in cols for v in _GYR_MAP.values()):
-        raise ValueError(f"{path}: missing gyroscope columns {list(_GYR_MAP.values())}.")
-    gyr = np.column_stack([raw[_GYR_MAP[k]].to_numpy() for k in ("gyr_x", "gyr_y", "gyr_z")])
-    # TODO(real-file): confirm gyro is deg/s. If rad/s, multiply by 180/pi here.
+    # Gyroscope is optional: it is never used downstream (gravity-referenced
+    # pitch/roll come from the quaternion), and orientation modes like Complete
+    # Quaternion do not log it. Carried as NaN when absent, like the magnetometer.
+    if all(v in cols for v in _GYR_MAP.values()):
+        gyr = np.column_stack([raw[_GYR_MAP[k]].to_numpy() for k in ("gyr_x", "gyr_y", "gyr_z")])
+        # TODO(real-file): confirm gyro is deg/s. If rad/s, multiply by 180/pi here.
+    else:
+        gyr = np.full((len(t), 3), np.nan)
 
     # E: magnetometer optional; normalised units, never used downstream.
     if all(v in cols for v in _MAG_MAP.values()):
@@ -289,6 +293,121 @@ def read_dot_export(
         "mag_x": mag[:, 0], "mag_y": mag[:, 1], "mag_z": mag[:, 2],
     }).select(CANONICAL_COLUMNS)
     return out
+
+
+# --------------------------------------------------------------------------- #
+# Public: write a synthetic DOT export (the inverse of read_dot_export)
+# --------------------------------------------------------------------------- #
+
+#: Columns each supported export mode writes (mirrors the payload layouts derived
+#: from the reference parser). ``custom5`` is the recommended recording mode.
+_EXPORT_MODES: dict[str, tuple[str, ...]] = {
+    # Custom Mode 5: Quaternion + raw Acceleration (with gravity) + Angular velocity.
+    "custom5": ("Quat", "Acc", "Gyr"),
+    # Complete Quaternion: Quaternion + FreeAcceleration (gravity removed). No gyro.
+    "complete_quaternion": ("Quat", "FreeAcc"),
+    # Rate Quantities with Mag: raw Acceleration + Angular velocity + Magnetometer.
+    "rate_quantities_with_mag": ("Acc", "Gyr", "Mag"),
+}
+
+
+def write_dot_export(
+    df: pl.DataFrame,
+    path: str | Path,
+    *,
+    mode: str = "custom5",
+    start_time_us: int = 1_000_000,
+    preamble: bool = True,
+) -> Path:
+    """Write a canonical dataframe as a Movella-DOT-format CSV (the inverse of
+    :func:`read_dot_export`). Handy for producing a realistic **sample export**
+    from a synthetic swimmer, and for round-trip-testing the reader before any
+    hardware exists.
+
+    Parameters
+    ----------
+    df:
+        A canonical dataframe (from :mod:`swimlab.synth` / a virtual sensor):
+        ``t, quat_*, acc_*`` (with gravity), ``gyr_*, mag_*``.
+    path:
+        Output ``.csv`` path.
+    mode:
+        Which DOT payload mode's columns to emit:
+
+        * ``"custom5"`` (default) -- **Custom Mode 5**: ``PacketCounter,
+          SampleTimeFine, Quat_W..Z, Acc_X/Y/Z, Gyr_X/Y/Z`` (raw acceleration
+          with gravity, no magnetometer). The recommended recording mode; reads
+          back with no gravity reconstruction.
+        * ``"complete_quaternion"`` -- ``Quat_W..Z`` + ``FreeAcc_X/Y/Z`` (gravity
+          removed via the sample's quaternion). Exercises the reader's
+          free-acceleration reconstruction path.
+        * ``"rate_quantities_with_mag"`` -- ``Acc_X/Y/Z, Gyr_X/Y/Z, Mag_X/Y/Z``
+          (no orientation) -- for completeness; not used by the head pipeline.
+    start_time_us:
+        Value the ``SampleTimeFine`` counter starts at (microseconds); the
+        column then advances with ``t`` and wraps at 2**32 like the real device.
+    preamble:
+        Write a short metadata preamble before the header (as real exports do).
+
+    Returns
+    -------
+    pathlib.Path
+        The path written.
+
+    Notes
+    -----
+    This mirrors the *derived* DOT column format; it is a faithful stand-in for a
+    real export's structure, not a byte-level replica of a specific firmware's
+    file. ``read_dot_export(write_dot_export(df)) == df`` (to float precision;
+    ``complete_quaternion`` round-trips ``acc`` via gravity reconstruction).
+    """
+    import csv
+
+    if mode not in _EXPORT_MODES:
+        raise ValueError(f"unknown export mode {mode!r}; expected one of {sorted(_EXPORT_MODES)}")
+    fields = _EXPORT_MODES[mode]
+    df = df.select(CANONICAL_COLUMNS)
+    t = df["t"].to_numpy()
+    quat = df.select(["quat_w", "quat_x", "quat_y", "quat_z"]).to_numpy()
+    acc = df.select(["acc_x", "acc_y", "acc_z"]).to_numpy()
+    gyr = df.select(["gyr_x", "gyr_y", "gyr_z"]).to_numpy()
+    mag = df.select(["mag_x", "mag_y", "mag_z"]).to_numpy()
+
+    # SampleTimeFine: microsecond ticks from start_time_us, wrapping at 2**32.
+    stf = ((np.round(t * _TIME_TICK_HZ).astype(np.int64) + int(start_time_us)) % int(_TIME_WRAP))
+
+    # build the ordered column list + a per-column value provider
+    header: list[str] = ["PacketCounter", _TIME_COL]
+    getters: list = [lambda i: i, lambda i: int(stf[i])]
+
+    def _vec(arr, names):
+        for j, name in enumerate(names):
+            header.append(name)
+            getters.append(lambda i, arr=arr, j=j: repr(float(arr[i, j])))
+
+    if "Quat" in fields:
+        _vec(quat, ("Quat_W", "Quat_X", "Quat_Y", "Quat_Z"))
+    if "Acc" in fields:
+        _vec(acc, ("Acc_X", "Acc_Y", "Acc_Z"))
+    if "FreeAcc" in fields:
+        free = acc - _gravity_in_sensor(quat)  # remove gravity, as the device does
+        _vec(free, ("FreeAcc_X", "FreeAcc_Y", "FreeAcc_Z"))
+    if "Gyr" in fields:
+        _vec(gyr, ("Gyr_X", "Gyr_Y", "Gyr_Z"))
+    if "Mag" in fields:
+        _vec(mag, ("Mag_X", "Mag_Y", "Mag_Z"))
+
+    path = Path(path)
+    with open(path, "w", newline="", encoding="utf-8") as fh:
+        if preamble:
+            fh.write("// Movella DOT (synthetic export from swimlab.io.write_dot_export)\n")
+            fh.write(f"// Payload mode: {mode}\n")
+            fh.write(f"// Output rate: {_SAMPLE_RATE_HZ:.0f}Hz\n")
+        w = csv.writer(fh)
+        w.writerow(header)
+        for i in range(len(t)):
+            w.writerow([g(i) for g in getters])
+    return path
 
 
 # --------------------------------------------------------------------------- #
@@ -362,8 +481,9 @@ def validate_dot_export(path: str | Path) -> ExportReport:
             else ("FreeAcc_X/Y/Z only (gravity removed) — will be reconstructed; "
                   f"prefer recording {RECOMMENDED_RECORDING_MODE}" if has_free_acc
                   else "no acceleration columns (need Acc_* or FreeAcc_*)"))
-    rep.add("gyr_columns", "PASS" if all(v in cols for v in _GYR_MAP.values()) else "FAIL",
-            "Gyr_X/Y/Z present" if all(v in cols for v in _GYR_MAP.values()) else "missing")
+    rep.add("gyr_columns", "PASS" if all(v in cols for v in _GYR_MAP.values()) else "WARN",
+            "Gyr_X/Y/Z present" if all(v in cols for v in _GYR_MAP.values())
+            else "no gyroscope (ok — unused downstream; e.g. Complete Quaternion mode)")
     rep.add("mag_columns", "PASS" if all(v in cols for v in _MAG_MAP.values()) else "WARN",
             "Mag_X/Y/Z present" if all(v in cols for v in _MAG_MAP.values())
             else "no magnetometer (ok — never used)")
