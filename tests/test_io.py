@@ -18,39 +18,40 @@ import pytest
 
 from swimlab import calibrate, events, io, metrics, synth
 
-# Column order the fake exporter writes (assumed Movella "Complete (Quaternion)").
-_HEADER = [
-    "PacketCounter", "SampleTimeFine",
-    "Quat_W", "Quat_X", "Quat_Y", "Quat_Z",
-    "Acc_X", "Acc_Y", "Acc_Z",
-    "Gyr_X", "Gyr_Y", "Gyr_Z",
-    "Mag_X", "Mag_Y", "Mag_Z",
-]
+def _write_fake_dot_csv(df: pl.DataFrame, path, *, acc="raw", ned=False,
+                        include_mag=True, drop=(), preamble=True):
+    """Write a canonical dataframe as a Movella-DOT-style CSV, using the **real**
+    column conventions derived from the DOT payload format (see swimlab/io.py):
 
+    * ``acc="raw"``  -> ``Acc_X/Y/Z`` with gravity (Rate Quantities / Custom Mode 5).
+    * ``acc="free"`` -> ``FreeAcc_X/Y/Z`` with gravity removed (orientation modes).
+    * ``include_mag=False`` -> no ``Mag_*`` (Custom Mode 5 has no magnetometer).
+    * ``ned`` flips gravity into a z-down world (writes raw ``Acc_*``).
+    * ``drop`` omits columns (to exercise the validator).
 
-def _write_fake_dot_csv(df: pl.DataFrame, path, *, free_accel=False, ned=False,
-                        drop=(), preamble=True):
-    """Write a canonical dataframe as a Movella-DOT-style CSV in the assumed
-    format, so the reader can be exercised end to end.
-
-    ``free_accel`` subtracts gravity (simulates a free-acceleration export);
-    ``ned`` flips gravity (simulates a z-down world frame); ``drop`` omits
-    columns (to exercise the validator).
+    ``PacketCounter``/``SampleTimeFine`` and a metadata preamble mirror a real
+    export. This proves the reader's logic in place; it is not a real recording.
     """
     t = df["t"].to_numpy()
     quat = df.select(["quat_w", "quat_x", "quat_y", "quat_z"]).to_numpy()
-    acc = df.select(["acc_x", "acc_y", "acc_z"]).to_numpy()
+    acc_raw = df.select(["acc_x", "acc_y", "acc_z"]).to_numpy()
     gyr = df.select(["gyr_x", "gyr_y", "gyr_z"]).to_numpy()
     mag = df.select(["mag_x", "mag_y", "mag_z"]).to_numpy()
-
     grav = io._gravity_in_sensor(quat)  # sensor-frame gravity from the quaternion
-    if free_accel:
-        acc = acc - grav
+
     if ned:
-        acc = -grav  # anti-aligned with the quaternion-implied gravity (z-down)
+        acc_vals, acc_cols = -grav, ("Acc_X", "Acc_Y", "Acc_Z")  # z-down world
+    elif acc == "free":
+        acc_vals, acc_cols = acc_raw - grav, ("FreeAcc_X", "FreeAcc_Y", "FreeAcc_Z")
+    else:
+        acc_vals, acc_cols = acc_raw, ("Acc_X", "Acc_Y", "Acc_Z")
 
     stf = np.round(t * 1_000_000.0).astype(np.int64)  # SampleTimeFine (us)
-    header = [c for c in _HEADER if c not in drop]
+    header = ["PacketCounter", "SampleTimeFine", "Quat_W", "Quat_X", "Quat_Y", "Quat_Z",
+              *acc_cols, "Gyr_X", "Gyr_Y", "Gyr_Z"]
+    if include_mag:
+        header += ["Mag_X", "Mag_Y", "Mag_Z"]
+    header = [c for c in header if c not in drop]
     with open(path, "w", newline="", encoding="utf-8") as fh:
         if preamble:  # a few metadata rows, as real exports carry
             fh.write("// Start Time: 2026-07-23 10:00:00.000\n")
@@ -58,16 +59,15 @@ def _write_fake_dot_csv(df: pl.DataFrame, path, *, free_accel=False, ned=False,
             fh.write("// Firmware Version: 1.10.0\n")
         w = csv.writer(fh)
         w.writerow(header)
-        row_all = {}
         for i in range(len(t)):
-            row_all = {
+            row = {
                 "PacketCounter": i, "SampleTimeFine": int(stf[i]),
                 "Quat_W": quat[i, 0], "Quat_X": quat[i, 1], "Quat_Y": quat[i, 2], "Quat_Z": quat[i, 3],
-                "Acc_X": acc[i, 0], "Acc_Y": acc[i, 1], "Acc_Z": acc[i, 2],
+                acc_cols[0]: acc_vals[i, 0], acc_cols[1]: acc_vals[i, 1], acc_cols[2]: acc_vals[i, 2],
                 "Gyr_X": gyr[i, 0], "Gyr_Y": gyr[i, 1], "Gyr_Z": gyr[i, 2],
                 "Mag_X": mag[i, 0], "Mag_Y": mag[i, 1], "Mag_Z": mag[i, 2],
             }
-            w.writerow([row_all[c] for c in header])
+            w.writerow([row[c] for c in header])
 
 
 @pytest.fixture(scope="module")
@@ -114,17 +114,31 @@ def test_time_seconds_unwraps_and_zeroes():
 
 def test_roundtrip_with_gravity(tmp_path, trial):
     p = tmp_path / "g.csv"
-    _write_fake_dot_csv(trial, p, free_accel=False)
+    _write_fake_dot_csv(trial, p, acc="raw")
     out = io.read_dot_export(p)
     assert np.allclose(out["t"].to_numpy(), trial["t"].to_numpy(), atol=1e-5)
     for c in ("quat_w", "acc_x", "acc_z", "gyr_y", "mag_z"):
         assert np.allclose(out[c].to_numpy(), trial[c].to_numpy(), atol=1e-6), c
 
 
+def test_custom_mode_5_export_no_magnetometer(tmp_path, trial):
+    """The recommended recording mode (Custom Mode 5) is quaternion + raw
+    acceleration + gyro, with NO magnetometer. It must read cleanly, with the
+    (unused) magnetometer carried as NaN."""
+    p = tmp_path / "cm5.csv"
+    _write_fake_dot_csv(trial, p, acc="raw", include_mag=False)
+    out = io.read_dot_export(p)
+    for c in ("acc_x", "acc_z", "gyr_y"):
+        assert np.allclose(out[c].to_numpy(), trial[c].to_numpy(), atol=1e-6), c
+    assert out["mag_x"].is_nan().all()  # mag absent -> NaN, never used downstream
+
+
 def test_roundtrip_free_acceleration_reconstructs_gravity(tmp_path, trial):
+    """An orientation-mode export carries FreeAcc_* (gravity removed); the reader
+    reconstructs gravity-inclusive acc from the quaternion."""
     p = tmp_path / "free.csv"
-    _write_fake_dot_csv(trial, p, free_accel=True)
-    out = io.read_dot_export(p)  # auto-detects free accel, adds gravity back
+    _write_fake_dot_csv(trial, p, acc="free")
+    out = io.read_dot_export(p)
     for c in ("acc_x", "acc_y", "acc_z"):
         assert np.allclose(out[c].to_numpy(), trial[c].to_numpy(), atol=1e-6), c
 
@@ -136,7 +150,7 @@ def test_read_output_is_pipeline_compatible(tmp_path):
     df, _ = synth.generate_trial("LIFTER", mount_offset_deg=base, noise=False,
                                  seed=7, pitch_baseline_deg=5.0)
     p = tmp_path / "trial.csv"
-    _write_fake_dot_csv(df, p)
+    _write_fake_dot_csv(df, p, acc="raw")
     read = io.read_dot_export(p)
 
     segs, _ = synth.generate_calibration(mount_offset_deg=base, pitch_baseline_deg=5.0,
@@ -159,7 +173,7 @@ def test_read_output_is_pipeline_compatible(tmp_path):
 
 def test_validate_good_export_passes(tmp_path, trial):
     p = tmp_path / "ok.csv"
-    _write_fake_dot_csv(trial, p)
+    _write_fake_dot_csv(trial, p, acc="raw")
     rep = io.validate_dot_export(p)
     assert rep.ok, str(rep)
     by = {c.name: c.status for c in rep.checks}
@@ -179,7 +193,7 @@ def test_validate_flags_missing_gyro(tmp_path, trial):
 
 def test_validate_warns_on_free_acceleration(tmp_path, trial):
     p = tmp_path / "free.csv"
-    _write_fake_dot_csv(trial, p, free_accel=True)
+    _write_fake_dot_csv(trial, p, acc="free")
     rep = io.validate_dot_export(p)
     assert any(c.name == "acc_has_gravity" and c.status == "WARN" for c in rep.checks)
 

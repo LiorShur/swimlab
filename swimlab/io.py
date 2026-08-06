@@ -1,49 +1,65 @@
-"""Movella DOT CSV export -> canonical dataframe.  **DRAFT — UNVALIDATED.**
+"""Movella DOT export -> canonical dataframe.  Draft, but format-derived.
 
 STATUS
 ------
-This module is drafted against Movella/Xsens DOT's *documented* CSV export
-format. **It has not been run against a real export file.** Every place where
-the vendor format is assumed is flagged ``# TODO(real-file)``. When the first
-real recording exists:
-
-1. Run :func:`validate_dot_export` on it -- it reports PASS/WARN/FAIL for each
-   assumption below and tells you exactly what to fix.
-2. Adjust the constants / column maps this file flags.
-3. Only then trust :func:`read_dot_export` output downstream.
-
-Until then, ``read_dot_export`` is exercised only against a *synthetic* CSV
-written in the assumed format (see ``tests/test_io.py``); that proves the
-parsing/units/timestamp logic is self-consistent, **not** that the assumed
-format matches a real DOT export.
+Drafted against Movella/Xsens DOT's data format, now **cross-checked against a
+reference implementation** -- the BLE payload parser in
+``jiminghe/Xsens_DOT_PC_Reader`` (``movella_dot_py/core/parser.py`` +
+``models/data_structures.py``) -- plus Movella's documented CSV column names.
+That pins the field layout, types, units and the free-vs-raw acceleration
+distinction below. It still has **not been run on a real export file**, so
+format details that only a real recording can confirm (exact Euler convention,
+the free-acceleration frame, the delimiter/locale, that gyro really is deg/s)
+stay flagged ``# TODO(real-file)``. When the first real recording exists, run
+:func:`validate_dot_export` on it, fix anything it flags, then trust
+:func:`read_dot_export`.
 
 The pipeline contract (what this must produce)
 ----------------------------------------------
 The canonical dataframe (CLAUDE.md): ``t`` (s from start), ``quat_w..quat_z``
 (unit quaternion, **sensor->global**), ``acc_*`` (m/s^2, sensor frame,
-**includes gravity**), ``gyr_*`` (deg/s, sensor frame), ``mag_*`` (uT, logged
+**includes gravity**), ``gyr_*`` (deg/s, sensor frame), ``mag_*`` (logged,
 never used). calibrate/events/metrics all read this schema.
 
-Key assumptions to confirm against a real file (each is a ``# TODO(real-file)``)
-------------------------------------------------------------------------------
-A. **Export mode / columns.** Assumes a *quaternion* logging mode, columns
-   ``SampleTimeFine, Quat_W, Quat_X, Quat_Y, Quat_Z, Acc_X, Acc_Y, Acc_Z,
-   Gyr_X, Gyr_Y, Gyr_Z, Mag_X, Mag_Y, Mag_Z`` after a metadata preamble.
-B. **Acceleration WITH gravity.** The pipeline needs gravity in ``acc`` (for
-   push-off detection and the gravity-referenced approach). Several DOT modes
-   export *free acceleration* (gravity removed). This reader auto-detects that
-   (rest |acc| ~ 0 instead of ~9.8) and reconstructs gravity from the
-   quaternion -- but the free-acceleration *frame* (sensor vs earth) is an
-   assumption. Prefer exporting a mode that keeps gravity.
-C. **Quaternion convention.** Assumes sensor->global (Movella "orientation"
-   output) in an ENU / z-up world frame (gravity along -Z). If the export is
-   NED / z-down, gravity flips sign and the whole pipeline inverts -- the
-   validator checks this.
-D. **Timestamp.** ``SampleTimeFine`` is microseconds (1 MHz ticks) and wraps at
-   2**32; converted to seconds from trial start.
-E. **Units.** Gyroscope deg/s (not rad/s); magnetometer is normalised (~1 =
-   Earth field), *not* uT -- carried through unconverted since mag is never used.
-F. **Sample rate** 120 Hz.
+Derived DOT format (from the reference parser + Movella docs)
+-------------------------------------------------------------
+Onboard recording is exported to CSV; columns depend on the **payload mode**
+the recording used. Field encodings in the BLE payload (little-endian):
+
+* ``SampleTimeFine`` -- uint32, microseconds (1 MHz), starts at power-on, wraps
+  at 2**32 (~1.2 h).  ``PacketCounter`` precedes it.
+* ``Quat_W/X/Y/Z``   -- 4x float32, order **w, x, y, z**, sensor->earth.
+* ``Euler_X/Y/Z``    -- 3x float32 = roll, pitch, yaw (deg).
+* ``Acc_X/Y/Z``      -- 3x float32, m/s^2, **raw acceleration WITH gravity**.
+* ``FreeAcc_X/Y/Z``  -- 3x float32, m/s^2, **free acceleration, gravity REMOVED**.
+* ``Gyr_X/Y/Z``      -- 3x float32, deg/s.
+* ``Mag_X/Y/Z``      -- 3x int16 / 4096 -> ~Gauss (arbitrary units, **not uT**).
+* ``Status``         -- uint16 bitfield (clipping flags); ClipCount Acc/Gyr uint8.
+
+**Which acceleration you get depends on the mode** (this is the load-bearing
+fact for us): every orientation mode -- Complete/Extended Quaternion, all Euler
+modes, Custom Modes 1-2 -- outputs **FreeAcc only** (gravity removed). Raw
+``Acc`` (with gravity, which the pipeline needs) appears **only** in
+``RATE_QUANTITIES(_WITH_MAG)`` and **``CUSTOM_MODE_5``**.
+
+*Recommended recording mode:* **Custom Mode 5** (payload id 26) =
+``Timestamp + Quaternion + Acceleration(raw) + Angular velocity``. That is the
+canonical schema minus the (unused) magnetometer, at **120 Hz** (120 Hz is
+*recording-only*; BLE streaming caps at 60 Hz) -- no gravity reconstruction
+needed. Failing that, any FreeAcc export is handled by reconstructing gravity
+from the quaternion (see :func:`_resolve_acceleration`), at the cost of relying
+on the free-acceleration frame assumption.
+
+Remaining real-file confirmations (each a ``# TODO(real-file)``)
+----------------------------------------------------------------
+A. Header strings / delimiter (locale may use ``;``); which columns the chosen
+   mode actually emits.
+B. Free-acceleration **frame** (this reader assumes the sensor/local frame when
+   reconstructing) -- moot if you record Custom Mode 5 (raw Acc).
+C. World frame ENU / z-up (gravity along -Z). NED / z-down would invert the
+   pipeline; the validator checks acc-vs-quaternion-gravity alignment.
+D. Euler rotation order (only used if quaternion columns are absent).
+E. Gyro really deg/s (not rad/s).
 """
 
 from __future__ import annotations
@@ -74,9 +90,17 @@ _TIME_WRAP = 2 ** 32         # D: SampleTimeFine wraps at 2**32  # TODO(real-fil
 # exact header strings (case/underscores may differ between app/firmware versions).
 _TIME_COL = "SampleTimeFine"
 _QUAT_MAP = {"quat_w": "Quat_W", "quat_x": "Quat_X", "quat_y": "Quat_Y", "quat_z": "Quat_Z"}
+# Raw acceleration WITH gravity (Rate Quantities / Custom Mode 5). Preferred.
 _ACC_MAP = {"acc_x": "Acc_X", "acc_y": "Acc_Y", "acc_z": "Acc_Z"}
+# Free acceleration, gravity REMOVED (every orientation mode). Gravity is
+# reconstructed from the quaternion when only these are present.
+_FREEACC_MAP = {"acc_x": "FreeAcc_X", "acc_y": "FreeAcc_Y", "acc_z": "FreeAcc_Z"}
 _GYR_MAP = {"gyr_x": "Gyr_X", "gyr_y": "Gyr_Y", "gyr_z": "Gyr_Z"}
 _MAG_MAP = {"mag_x": "Mag_X", "mag_y": "Mag_Y", "mag_z": "Mag_Z"}
+
+#: The recording mode that yields the canonical schema directly (quaternion +
+#: raw acceleration + gyro), minus the unused magnetometer. See module docstring.
+RECOMMENDED_RECORDING_MODE = "Custom Mode 5 (Quaternion + Acceleration + Angular velocity), 120 Hz"
 # Euler fallback (some modes export Euler, not quaternion).  # TODO(real-file):
 # confirm the Euler rotation order/units before trusting the conversion.
 _EULER_COLS = ("Euler_X", "Euler_Y", "Euler_Z")
@@ -228,10 +252,23 @@ def read_dot_export(
             f"or {list(_EULER_COLS)}). Re-export in a quaternion logging mode."
         )
 
-    if not all(v in cols for v in _ACC_MAP.values()):
-        raise ValueError(f"{path}: missing acceleration columns {list(_ACC_MAP.values())}.")
-    acc = np.column_stack([raw[_ACC_MAP[k]].to_numpy() for k in ("acc_x", "acc_y", "acc_z")])
-    acc, _note = _resolve_acceleration(acc, quat, acceleration)
+    # Acceleration: prefer raw Acc_* (with gravity, e.g. Custom Mode 5); fall back
+    # to FreeAcc_* (gravity removed -- every orientation mode) and reconstruct.
+    has_raw = all(v in cols for v in _ACC_MAP.values())
+    has_free = all(v in cols for v in _FREEACC_MAP.values())
+    if has_raw:
+        acc = np.column_stack([raw[_ACC_MAP[k]].to_numpy() for k in ("acc_x", "acc_y", "acc_z")])
+        acc, _note = _resolve_acceleration(acc, quat, acceleration)
+    elif has_free:
+        free = np.column_stack([raw[_FREEACC_MAP[k]].to_numpy() for k in ("acc_x", "acc_y", "acc_z")])
+        acc = free + _gravity_in_sensor(quat)  # reconstruct gravity-inclusive acc
+        _note = "gravity reconstructed from FreeAcc_* + quaternion (frame assumed sensor)"
+    else:
+        raise ValueError(
+            f"{path}: no acceleration columns. Need raw {list(_ACC_MAP.values())} "
+            f"(preferred -- record in {RECOMMENDED_RECORDING_MODE}) or free "
+            f"{list(_FREEACC_MAP.values())}. Re-export in a mode that includes acceleration."
+        )
 
     if not all(v in cols for v in _GYR_MAP.values()):
         raise ValueError(f"{path}: missing gyroscope columns {list(_GYR_MAP.values())}.")
@@ -317,8 +354,14 @@ def validate_dot_export(path: str | Path) -> ExportReport:
     rep.add("orientation", "PASS" if has_quat else ("WARN" if has_eul else "FAIL"),
             "quaternion" if has_quat else ("Euler only — will be converted (confirm order)"
             if has_eul else "no orientation columns; re-export in quaternion mode"))
-    rep.add("acc_columns", "PASS" if all(v in cols for v in _ACC_MAP.values()) else "FAIL",
-            "Acc_X/Y/Z present" if all(v in cols for v in _ACC_MAP.values()) else "missing")
+    has_raw_acc = all(v in cols for v in _ACC_MAP.values())
+    has_free_acc = all(v in cols for v in _FREEACC_MAP.values())
+    rep.add("acc_columns",
+            "PASS" if has_raw_acc else ("WARN" if has_free_acc else "FAIL"),
+            "Acc_X/Y/Z (raw, with gravity)" if has_raw_acc
+            else ("FreeAcc_X/Y/Z only (gravity removed) — will be reconstructed; "
+                  f"prefer recording {RECOMMENDED_RECORDING_MODE}" if has_free_acc
+                  else "no acceleration columns (need Acc_* or FreeAcc_*)"))
     rep.add("gyr_columns", "PASS" if all(v in cols for v in _GYR_MAP.values()) else "FAIL",
             "Gyr_X/Y/Z present" if all(v in cols for v in _GYR_MAP.values()) else "missing")
     rep.add("mag_columns", "PASS" if all(v in cols for v in _MAG_MAP.values()) else "WARN",
@@ -348,7 +391,7 @@ def validate_dot_export(path: str | Path) -> ExportReport:
                 f"mean |q|={float(np.mean(norm)):.4f} (expected 1.0)")
 
     # acceleration: gravity present? and pointing the ENU way?
-    if all(v in cols for v in _ACC_MAP.values()):
+    if has_raw_acc:
         acc = np.column_stack([raw[_ACC_MAP[k]].to_numpy() for k in ("acc_x", "acc_y", "acc_z")])
         resting = float(np.median(np.linalg.norm(acc, axis=1)))
         if resting > 0.5 * _G:
@@ -365,11 +408,20 @@ def validate_dot_export(path: str | Path) -> ExportReport:
                         f"({'z-up/ENU as assumed' if md > 0.7 else 'MISMATCH — likely NED/z-down; pipeline would invert'})")
         else:
             rep.add("acc_has_gravity", "WARN",
-                    f"median |acc|={resting:.2f} << g — looks like FREE acceleration; "
-                    "read_dot_export will reconstruct gravity (confirm the free-accel frame)")
+                    f"Acc_* median |acc|={resting:.2f} << g — labelled raw but looks free; "
+                    "confirm the export mode")
+    elif has_free_acc:
+        free = np.column_stack([raw[_FREEACC_MAP[k]].to_numpy() for k in ("acc_x", "acc_y", "acc_z")])
+        resting = float(np.median(np.linalg.norm(free, axis=1)))
+        rep.add("acc_has_gravity", "WARN",
+                f"FreeAcc only (median |free|={resting:.2f} << g) — read_dot_export "
+                f"reconstructs gravity from the quaternion; prefer recording "
+                f"{RECOMMENDED_RECORDING_MODE} so raw Acc (with gravity) is logged directly")
 
     # NaN in required channels
-    req = [_TIME_COL] + list(_ACC_MAP.values()) + list(_GYR_MAP.values())
+    acc_cols = list(_ACC_MAP.values()) if has_raw_acc else (
+        list(_FREEACC_MAP.values()) if has_free_acc else [])
+    req = [_TIME_COL] + acc_cols + list(_GYR_MAP.values())
     if has_quat:
         req += list(_QUAT_MAP.values())
     nan_cols = [c for c in req if c in cols and raw[c].is_null().any()]
