@@ -53,6 +53,7 @@ for validated performance, per spec section 9)
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -60,6 +61,8 @@ import numpy as np
 import polars as pl
 import yaml
 from scipy.spatial.transform import Rotation
+
+from swimlab import placements
 
 # --------------------------------------------------------------------------- #
 # Fixed physical / study constants
@@ -1087,6 +1090,499 @@ def generate_bobs(
         "seed": seed,
     }
     return df, ground_truth
+
+
+# --------------------------------------------------------------------------- #
+# Unified multi-segment body model (platform Phase 0)
+# --------------------------------------------------------------------------- #
+#
+# The head generator above (`generate_trial`) is a *single-segment* model: it
+# injects skull pitch/roll, derives one sensor's channels and stops. The
+# platform (docs/platform-design.md) needs a *body*: one kinematic swimmer from
+# which every placement's virtual sensor is sampled, so cross-sensor work
+# (L/R symmetry, sacrum-vs-head) is testable against ONE ground truth.
+#
+# Design that keeps the head bit-exact (no metric change -- the Phase 0
+# acceptance): a segment's kinematics are stored *without* any sensor property.
+# For each segment we keep
+#
+#     r_body            segment->global orientation, heading-free (no yaw)
+#     lin_accel_segment linear acceleration in the segment's own frame (m/s^2)
+#
+# exactly the two quantities `_orientation` (with mount=identity, yaw=0) and
+# `_linear_accel_sensor` (before the mount rotation) already produce for the
+# head. `virtual_sensor` then bolts a placement's mount + per-sensor yaw
+# corruption + DOT noise on top -- the identical composition `generate_trial`
+# uses inline. Feeding the head segment through `virtual_sensor` with the same
+# seed therefore reproduces `generate_trial` byte-for-byte (pinned in
+# tests/test_platform.py), which is what "the head re-expressed through it, no
+# metric change" means.
+
+
+@dataclass
+class SegmentKinematics:
+    """One rigid body segment's sensor-independent motion over the trial.
+
+    ``r_body`` is the segment->global orientation with **no heading** (the
+    gravity-referenced part; the same object `_orientation` returns as its
+    ``r_noyaw`` term when mount is the identity). ``lin_accel_segment`` is the
+    segment's linear acceleration (gravity excluded) expressed in the segment's
+    *own* frame, so a placement's mount rotation maps it into the sensor frame.
+    Both are what a sensor at any mount on this segment observes, before the
+    sensor's mount, heading corruption and noise are applied.
+    """
+
+    r_body: Rotation
+    lin_accel_segment: np.ndarray
+
+
+@dataclass
+class BodyModel:
+    """One synthetic swimmer's whole-body kinematics + ground truth.
+
+    Produced by :func:`generate_swim`; sampled by :func:`virtual_sensor`. The
+    body is noise-free and sensor-free -- noise and mount are properties of a
+    *sensor*, added per placement. ``segments`` is keyed by the segment names
+    the placement registry uses (``"skull"``, ``"pelvis"``, ...).
+    """
+
+    t: np.ndarray
+    segments: dict[str, SegmentKinematics]
+    timeline: dict[str, Any]
+    swimmer: dict[str, Any]
+    truth: dict[str, Any]
+    meta: dict[str, Any]
+
+    def segment(self, name: str) -> SegmentKinematics:
+        """Fetch a segment's kinematics, with a clear error if it is absent."""
+        try:
+            return self.segments[name]
+        except KeyError:
+            raise KeyError(
+                f"body has no segment {name!r}; available: {sorted(self.segments)}"
+            ) from None
+
+
+def _segment_r_body(
+    pitch_deg: np.ndarray, roll_deg: np.ndarray, base: Rotation | None = None
+) -> Rotation:
+    """Heading-free segment->global orientation ``base . Ry(pitch) . Rx(roll)``.
+
+    Identical to the ``r_body`` term inside :func:`_orientation` (mount identity,
+    yaw 0). Kept as a small standalone so the body model can build each segment's
+    orientation without going through the head-specific mount/yaw composition.
+    """
+    if base is None:
+        base = Rotation.identity()
+    r_pr = Rotation.from_euler(
+        "y", np.asarray(pitch_deg)[:, None], degrees=True
+    ) * Rotation.from_euler("x", np.asarray(roll_deg)[:, None], degrees=True)
+    return base * r_pr
+
+
+def _forward_linear_accel(
+    t: np.ndarray,
+    timeline: dict[str, Any],
+    stroke_period_s: float,
+    surge_amp: float = 0.8,
+) -> np.ndarray:
+    """Linear acceleration along the segment-forward axis, in the segment frame.
+
+    A gentle stroke-rate forward surge plus a raised-cosine push-off transient
+    (~2-4 g) at each length start. This is exactly the magnitude profile
+    :func:`_linear_accel_sensor` builds for the head *before* rotating it into
+    the sensor frame, so ``mount.apply(result)`` reproduces that function. The
+    forward axis is the segment's +x (body-forward / top-of-head), which -- like
+    gravity -- is heading-independent.
+    """
+    mag = surge_amp * np.sin(2.0 * np.pi * t / stroke_period_s)
+    for p_t in timeline["pushoffs"]:
+        pulse = _raised_cosine(t, p_t + _PUSHOFF_DUR_S / 2.0, _PUSHOFF_DUR_S / 2.0)
+        mag = mag + _PUSHOFF_G_LOW * G * pulse * 1.5  # ~2-4 g at the peak
+    forward = np.tile(np.array([1.0, 0.0, 0.0]), (t.size, 1))
+    return forward * mag[:, None]
+
+
+def _pelvis_angle_signals(
+    t: np.ndarray,
+    timeline: dict[str, Any],
+    roll_amp_left: float,
+    roll_amp_right: float,
+    pitch_baseline_deg: float,
+    stroke_period_s: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Pelvis (whole-body) intrinsic pitch/roll in the segment frame (degrees).
+
+    Body roll is the dominant signal: one alternating raised-cosine lobe per
+    stroke, larger than the head's (the head is stabilised relative to the
+    rolling torso), with independent left/right amplitudes so an L/R roll
+    symmetry metric has something real to recover. Pitch stays near the prone
+    baseline with a small stroke-rate oscillation -- a streamlined body barely
+    pitches. No breath enhancement: pelvis roll is stroke-driven, not gated by
+    the breath, which is exactly why the sacrum sees every stroke, not only the
+    breathing ones.
+    """
+    half = _ROLL_LOBE_HALFWIDTH_FRAC * stroke_period_s
+    roll = np.zeros_like(t)
+    for stroke in timeline["strokes"]:
+        if stroke["side"] == "R":
+            roll += roll_amp_right * _raised_cosine(t, stroke["t"], half)
+        else:
+            roll -= roll_amp_left * _raised_cosine(t, stroke["t"], half)
+    pitch = np.full_like(t, pitch_baseline_deg)
+    pitch += 1.5 * np.sin(2.0 * np.pi * t / (2.0 * stroke_period_s))
+    return pitch, roll
+
+
+def _peak_roll_per_stroke(
+    t: np.ndarray, roll_grav: np.ndarray, timeline: dict[str, Any], stroke_period_s: float
+) -> list[dict[str, Any]]:
+    """Signed peak gravity-referenced roll in each stroke's lobe (ground truth).
+
+    For each stroke, take the extreme-magnitude ``roll_grav`` within half a
+    stroke period of the stroke time. This is the truth the sacrum roll-amplitude
+    and L/R symmetry metrics are scored against -- measured on the clean signal
+    the same way a detector would, not assumed equal to the injected amplitude
+    (adjacent lobes overlap, so the realised peak is a little under the amplitude).
+    """
+    half_span = int(round(0.5 * stroke_period_s * SAMPLE_RATE_HZ))
+    out: list[dict[str, Any]] = []
+    for stroke in timeline["strokes"]:
+        ci = int(round(stroke["t"] * SAMPLE_RATE_HZ))
+        lo, hi = max(ci - half_span, 0), min(ci + half_span, t.size - 1)
+        seg = roll_grav[lo : hi + 1]
+        if seg.size == 0:
+            continue
+        peak = float(seg[int(np.argmax(np.abs(seg)))])
+        out.append({"index": stroke["index"], "side": stroke["side"], "peak_roll_deg": peak})
+    return out
+
+
+def _forearm_angle_signals(
+    t: np.ndarray,
+    timeline: dict[str, Any],
+    side: str,
+    stroke_period_s: float,
+    pull_amp_deg: float,
+    recovery_amp_deg: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Forearm pitch/roll (deg) for one arm, in the calibrated forearm frame.
+
+    Zero pitch = arm extended forward-horizontal (the calibration reference). One
+    arm cycle spans two strokes: a negative **pull** dip (hand below the forward
+    line, under water -- catch through push) at each *same-side* stroke, and a
+    positive **recovery** bump (hand above, over water) at the midpoint between
+    consecutive pulls. During a glide no strokes fall, so the arm rests near the
+    forward-extended zero. The two arms are antiphase by construction: the right
+    arm pulls on the ``"R"`` strokes, the left on the ``"L"`` strokes, half a
+    cycle apart. Roll carries a small pronation/supination wobble.
+    """
+    half = 0.42 * stroke_period_s
+    same = [s["t"] for s in timeline["strokes"] if s["side"] == side]
+    pitch = np.zeros_like(t)
+    for tp in same:
+        pitch -= pull_amp_deg * _raised_cosine(t, tp, half)
+    for k in range(len(same) - 1):
+        gap = same[k + 1] - same[k]
+        if gap < 2.5 * (2.0 * stroke_period_s):  # same length, not across a wall
+            pitch += recovery_amp_deg * _raised_cosine(t, 0.5 * (same[k] + same[k + 1]), half)
+    roll = 8.0 * np.sin(2.0 * np.pi * t / (2.0 * stroke_period_s))
+    return pitch, roll
+
+
+def generate_swim(
+    archetype: str,
+    n_lengths: int = 4,
+    stroke_period_s: float = 1.4,
+    breathe_every_n_strokes: int = 3,
+    pool_length_m: float = 25.0,
+    body_roll_amp_deg: float = 48.0,
+    roll_asymmetry_frac: float = 0.0,
+    arm_pull_amp_deg: float = 70.0,
+    arm_recovery_amp_deg: float = 45.0,
+    arm_asymmetry_frac: float = 0.0,
+    seed: int | None = None,
+    pitch_baseline_deg: float | None = None,
+    config_path: str | Path | None = None,
+) -> BodyModel:
+    """Generate one synthetic swimmer's whole-body kinematics + ground truth.
+
+    This is the platform's single source of motion: it lays out the trial
+    timeline (push-offs, strokes, breaths) once and expresses every body segment
+    against it, so a head sensor and a sacrum sensor sampled from the same body
+    share one consistent ground truth. Sensors are *not* generated here -- call
+    :func:`virtual_sensor` to sample a placement.
+
+    The **skull** segment is built from the identical primitives as
+    :func:`generate_trial` (same swimmer sampling, same timeline, same
+    :func:`_angle_signals`), so the head re-expressed through this model matches
+    the shipped head module exactly. The **pelvis** segment carries the larger,
+    stroke-driven body roll the sacrum module analyses.
+
+    Parameters
+    ----------
+    archetype, n_lengths, stroke_period_s, breathe_every_n_strokes,
+    seed, pitch_baseline_deg, config_path:
+        As :func:`generate_trial` -- shared so the skull segment reproduces it.
+    pool_length_m:
+        Pool length (m). The *only* source of absolute distance
+        (distance = lengths x pool_length_m); an IMU cannot measure position.
+    body_roll_amp_deg:
+        Mean whole-body roll amplitude (deg) at the pelvis. Larger than the
+        head's roll: the torso rolls, the head is comparatively stabilised.
+    roll_asymmetry_frac:
+        Fractional left/right body-roll imbalance (right = amp*(1+f),
+        left = amp*(1-f)); 0 = symmetric. Drives the sacrum L/R roll-symmetry
+        metric's ground truth.
+
+    Returns
+    -------
+    BodyModel
+        Segments ``"skull"`` and ``"pelvis"`` plus the shared timeline, swimmer
+        params, a rich ``truth`` dict (per-stroke, per-length, push-off and
+        symmetry ground truth) and ``meta``.
+    """
+    cfg = _load_config(config_path)
+    streams = _rng_streams(seed)
+    swimmer = _sample_swimmer(archetype, streams["swimmer"])
+    if pitch_baseline_deg is not None:
+        swimmer["pitch_baseline"] = float(pitch_baseline_deg)
+
+    # Same timeline the head generator builds (same streams, same order) so the
+    # skull segment is identical to generate_trial for a given seed.
+    timeline = _build_timeline(
+        n_lengths,
+        stroke_period_s,
+        breathe_every_n_strokes,
+        swimmer,
+        streams["timing"],
+        streams["cycle"],
+    )
+
+    dt = 1.0 / SAMPLE_RATE_HZ
+    n = int(round(timeline["duration"] * SAMPLE_RATE_HZ)) + 1
+    t = np.arange(n) * dt
+
+    # ----- skull segment (identical construction to generate_trial) -----------
+    head_pitch, head_roll = _angle_signals(t, timeline, swimmer, stroke_period_s)
+    skull = SegmentKinematics(
+        r_body=_segment_r_body(head_pitch, head_roll),
+        lin_accel_segment=_forward_linear_accel(t, timeline, stroke_period_s),
+    )
+
+    # ----- pelvis segment -----------------------------------------------------
+    roll_amp_right = body_roll_amp_deg * (1.0 + roll_asymmetry_frac)
+    roll_amp_left = body_roll_amp_deg * (1.0 - roll_asymmetry_frac)
+    pelvis_baseline = 2.0  # deg, slight legs-down attitude in the prone reference
+    pelvis_pitch, pelvis_roll = _pelvis_angle_signals(
+        t, timeline, roll_amp_left, roll_amp_right, pelvis_baseline, stroke_period_s
+    )
+    pelvis = SegmentKinematics(
+        r_body=_segment_r_body(pelvis_pitch, pelvis_roll),
+        lin_accel_segment=_forward_linear_accel(t, timeline, stroke_period_s, surge_amp=1.0),
+    )
+
+    # ----- forearm segments (left / right) ------------------------------------
+    segments: dict[str, SegmentKinematics] = {"skull": skull, "pelvis": pelvis}
+    arm_truth: dict[str, Any] = {}
+    for side, seg_name in (("R", "forearm_r"), ("L", "forearm_l")):
+        pull_amp = arm_pull_amp_deg * (1.0 + (arm_asymmetry_frac if side == "R" else -arm_asymmetry_frac))
+        rec_amp = arm_recovery_amp_deg * (1.0 + (arm_asymmetry_frac if side == "R" else -arm_asymmetry_frac))
+        fa_pitch, fa_roll = _forearm_angle_signals(
+            t, timeline, side, stroke_period_s, pull_amp, rec_amp
+        )
+        segments[seg_name] = SegmentKinematics(
+            r_body=_segment_r_body(fa_pitch, fa_roll),
+            lin_accel_segment=_forward_linear_accel(t, timeline, stroke_period_s),
+        )
+        pull_times = [float(s["t"]) for s in timeline["strokes"] if s["side"] == side]
+        arm_cycles = np.diff(pull_times)
+        in_cycle = arm_cycles[arm_cycles < 2.0 * (2.0 * stroke_period_s)]
+        mean_cycle = float(np.mean(in_cycle)) if in_cycle.size else 2.0 * stroke_period_s
+        arm_truth[side] = {
+            "segment": seg_name,
+            "stroke_count": len(pull_times),
+            "pull_times": [round(p, 4) for p in pull_times],
+            "mean_cycle_s": round(mean_cycle, 4),
+            "stroke_rate_cpm": round(60.0 / mean_cycle, 3),
+            "pull_amp_deg": round(pull_amp, 3),
+            "recovery_amp_deg": round(rec_amp, 3),
+            "pitch_amplitude_deg": round(pull_amp + rec_amp, 3),
+        }
+
+    # ----- ground truth (gravity-referenced, the quantity a sensor measures) --
+    head_pitch_grav, head_roll_grav = _gravity_referenced_angles(
+        head_pitch, head_roll, swimmer["pitch_baseline"]
+    )
+    breaths, head_summary = _breath_ground_truth(
+        t, head_pitch_grav, head_roll_grav, timeline, swimmer, cfg
+    )
+    pelvis_pitch_grav, pelvis_roll_grav = _gravity_referenced_angles(
+        pelvis_pitch, pelvis_roll, pelvis_baseline
+    )
+    stroke_rolls = _peak_roll_per_stroke(t, pelvis_roll_grav, timeline, stroke_period_s)
+    right_peaks = [abs(s["peak_roll_deg"]) for s in stroke_rolls if s["side"] == "R"]
+    left_peaks = [abs(s["peak_roll_deg"]) for s in stroke_rolls if s["side"] == "L"]
+
+    stroke_times = [float(s["t"]) for s in timeline["strokes"]]
+    pushoffs = [float(p) for p in timeline["pushoffs"]]
+    # per-length wall-clock duration (push-off to push-off; last to trial end)
+    length_bounds = pushoffs + [float(t[-1])]
+    length_durations = [
+        round(length_bounds[i + 1] - length_bounds[i], 4) for i in range(n_lengths)
+    ]
+    # tempo from the realised stroke intervals within lengths (drop the big
+    # wall-turn gaps between lengths), so it is measured, not the nominal param.
+    intervals = np.diff(stroke_times)
+    swim_intervals = intervals[intervals < 2.0 * stroke_period_s]
+    mean_stroke_period = float(np.mean(swim_intervals)) if swim_intervals.size else stroke_period_s
+
+    def _mean(xs: list[float]) -> float:
+        return float(np.mean(xs)) if xs else 0.0
+
+    truth = {
+        "n_lengths": n_lengths,
+        "pool_length_m": pool_length_m,
+        "distance_m": round(n_lengths * pool_length_m, 4),
+        "stroke_count": len(timeline["strokes"]),
+        "stroke_times": [round(s, 4) for s in stroke_times],
+        "stroke_sides": [s["side"] for s in timeline["strokes"]],
+        "mean_stroke_period_s": round(mean_stroke_period, 4),
+        "tempo_spm": round(60.0 / mean_stroke_period, 3),  # strokes per minute
+        "stroke_rate_cpm": round(60.0 / (2.0 * mean_stroke_period), 3),  # cycles/min
+        "pushoffs": [{"t": round(p, 4)} for p in pushoffs],
+        "pushoff_count": len(pushoffs),
+        "length_durations_s": length_durations,
+        "pace_drift_s_per_length": round(
+            float(np.polyfit(range(n_lengths), length_durations, 1)[0])
+            if n_lengths >= 2
+            else 0.0,
+            4,
+        ),
+        "body_roll_amp_deg": round(body_roll_amp_deg, 3),
+        "mean_peak_roll_right_deg": round(_mean(right_peaks), 3),
+        "mean_peak_roll_left_deg": round(_mean(left_peaks), 3),
+        "roll_symmetry_index": round(
+            (_mean(right_peaks) - _mean(left_peaks))
+            / max(0.5 * (_mean(right_peaks) + _mean(left_peaks)), 1e-9),
+            4,
+        ),
+        "stroke_rolls": stroke_rolls,
+        "head": {"breaths": breaths, "summary": head_summary},
+        "arms": arm_truth,
+    }
+
+    meta = {
+        "archetype": archetype,
+        "seed": seed,
+        "n_lengths": n_lengths,
+        "stroke_period_s": stroke_period_s,
+        "breathe_every_n_strokes": breathe_every_n_strokes,
+        "pool_length_m": pool_length_m,
+        "sample_rate_hz": SAMPLE_RATE_HZ,
+        "pitch_baseline_deg": round(swimmer["pitch_baseline"], 4),
+        "pelvis_baseline_deg": pelvis_baseline,
+        "forearm_baseline_deg": 0.0,  # zero = arm forward-horizontal
+    }
+
+    return BodyModel(
+        t=t,
+        segments=segments,
+        timeline=timeline,
+        swimmer=swimmer,
+        truth=truth,
+        meta=meta,
+    )
+
+
+def virtual_sensor(
+    body: BodyModel,
+    placement: "placements.Placement | str",
+    *,
+    mount_offset_deg: tuple[float, float, float] = (0.0, 0.0, 0.0),
+    mount_slip_deg_per_min: float = 0.0,
+    noise: bool = True,
+    gyro_bias_walk: bool = True,
+    seed: int | None = None,
+    yaw_corruption_scale: float = 1.0,
+) -> tuple[pl.DataFrame, dict[str, Any]]:
+    """Sample a placement's segment from a body model into a canonical dataframe.
+
+    Bolts a *sensor* onto a body segment: the placement's mount (fixed offset,
+    optionally slipping), an independent per-sensor heading corruption (magnetic
+    disturbance -- unused downstream, present so any code that leans on yaw fails
+    loudly), and Movella DOT noise/bias. The composition is identical to
+    :func:`generate_trial`'s inline path, so a skull placement sampled with the
+    same seed reproduces the head trial exactly (see tests/test_platform.py).
+
+    Every physical sensor has its own noise/heading, so pass a **distinct**
+    ``seed`` per placement when generating a multi-sensor session; reusing one
+    seed across placements would couple their (nominally independent) corruption.
+
+    Parameters
+    ----------
+    body:
+        A :func:`generate_swim` body model.
+    placement:
+        A :class:`swimlab.placements.Placement`, a placement id (``"sacrum"``),
+        or a raw segment name (``"pelvis"``).
+    mount_offset_deg, mount_slip_deg_per_min, noise, gyro_bias_walk, seed,
+    yaw_corruption_scale:
+        Sensor properties, matching :func:`generate_trial`'s parameters.
+
+    Returns
+    -------
+    (dataframe, info)
+        ``dataframe`` is the canonical schema; ``info`` echoes the placement id,
+        segment, mount and seed for provenance.
+    """
+    if isinstance(placement, placements.Placement):
+        segment_name = placement.segment
+        placement_id = placement.id
+    elif placement in placements.PLACEMENTS:
+        segment_name = placements.PLACEMENTS[placement].segment
+        placement_id = placement
+    else:
+        segment_name = placement  # treat as a raw segment name
+        placement_id = None
+
+    seg = body.segment(segment_name)
+    t = body.t
+    n = t.size
+    dt = 1.0 / SAMPLE_RATE_HZ
+    streams = _rng_streams(seed)
+
+    mount = _mount_rotation(mount_offset_deg, mount_slip_deg_per_min, t)
+    mount_inv = mount.inv()
+
+    # sensor->global, heading-free (for gravity) and with heading (for gyro/quat)
+    r_sensor_noyaw = seg.r_body * mount_inv
+    yaw = _yaw_signal(t, streams["yaw"], yaw_corruption_scale)
+    r_sensor_full = (
+        Rotation.from_euler("z", yaw[:, None], degrees=True) * seg.r_body
+    ) * mount_inv
+
+    # accelerometer: yaw-free gravity + linear accel rotated into the sensor frame
+    grav_sensor = r_sensor_noyaw.inv().apply(np.tile([0.0, 0.0, G], (n, 1)))
+    lin_sensor = mount.apply(seg.lin_accel_segment)
+    acc = grav_sensor + lin_sensor
+
+    gyro = _derive_gyro(r_sensor_full, dt)
+    if noise:
+        acc, gyro = _add_sensor_noise(acc, gyro, streams, gyro_bias_walk)
+    quat = _emit_quaternion(r_sensor_full, streams["quat_error"], inject_error=noise)
+    mag = _magnetometer(r_sensor_full, streams["mag"], n, add_noise=noise)
+
+    df = _make_dataframe(t, quat, acc, gyro, mag)
+    info = {
+        "placement": placement_id,
+        "segment": segment_name,
+        "mount_offset_deg": list(mount_offset_deg),
+        "mount_slip_deg_per_min": mount_slip_deg_per_min,
+        "seed": seed,
+        "archetype": body.meta.get("archetype"),
+    }
+    return df, info
 
 
 # --------------------------------------------------------------------------- #

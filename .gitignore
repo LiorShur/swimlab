@@ -5,3 +5,4 @@ notebooks/*.ipynb
 .venv/
 __pycache__/
 _keys/
+*.egg-info/
